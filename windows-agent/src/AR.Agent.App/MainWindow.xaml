@@ -9,6 +9,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -26,10 +27,20 @@
             <TextBlock x:Name="PinText" FontSize="20" FontFamily="Consolas" VerticalAlignment="Center" />
         </StackPanel>
 
-        <!-- Live video panel + status overlay -->
-        <Border Grid.Row="2" Background="#11000000" CornerRadius="8">
+        <!-- Annotation toolbar: pick a tool, then click on the video to place it -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Annotate:" VerticalAlignment="Center" />
+            <RadioButton x:Name="ArrowTool" Content="Arrow" GroupName="Tool" IsChecked="True" />
+            <RadioButton x:Name="CircleTool" Content="Circle" GroupName="Tool" />
+            <RadioButton x:Name="TextTool" Content="Text" GroupName="Tool" />
+            <RadioButton x:Name="MarkerTool" Content="Marker" GroupName="Tool" />
+            <Button Content="Clear" Click="OnClearAnnotations" />
+        </StackPanel>
+
+        <!-- Live video panel + status overlay. Click to drop an annotation. -->
+        <Border Grid.Row="3" Background="#11000000" CornerRadius="8">
             <Grid>
-                <Image x:Name="VideoImage" Stretch="Uniform" />
+                <Image x:Name="VideoImage" Stretch="Uniform" PointerPressed="OnVideoPointerPressed" />
                 <TextBlock x:Name="StatusText" Margin="12" Text="Sign in to begin."
                            TextWrapping="Wrap" VerticalAlignment="Bottom"
                            HorizontalAlignment="Left" />

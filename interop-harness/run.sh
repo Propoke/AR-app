@@ -17,6 +17,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "[run] validating protocol against shared schemas"
+node "$HERE/src/schema-test.js"
+
 echo "[run] building signaling-dev"
 ( cd "$ROOT/backend" && go build -o "$BIN" ./cmd/signaling-dev )
 

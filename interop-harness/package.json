@@ -5,9 +5,12 @@
   "type": "module",
   "description": "Headless WebRTC interop harness: drives two peers through the signaling relay and verifies the offer/answer/ICE handshake, VP8+Opus codec negotiation, and the annotations data channel.",
   "scripts": {
-    "harness": "node src/harness.js"
+    "harness": "node src/harness.js",
+    "media": "node src/media-harness.js",
+    "schema": "node src/schema-test.js"
   },
   "dependencies": {
+    "ajv": "^8.17.1",
     "werift": "^0.21.0",
     "ws": "^8.18.0"
   }

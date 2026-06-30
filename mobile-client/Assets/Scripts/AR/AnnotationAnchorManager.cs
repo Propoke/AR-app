@@ -21,6 +21,7 @@ namespace ARApp.AR
         [SerializeField] private ARRaycastManager _raycastManager;
         [SerializeField] private ARAnchorManager _anchorManager;
         [SerializeField] private GameObject _markerPrefab;
+        [SerializeField] private Annotation2DOverlay _overlay; // fallback when no surface is hit
 
         private readonly Dictionary<string, ARAnchor> _anchors = new Dictionary<string, ARAnchor>();
         private readonly List<ARRaycastHit> _hits = new List<ARRaycastHit>();
@@ -45,9 +46,11 @@ namespace ARApp.AR
                     break;
                 case "delete":
                     Remove(evt.Id);
+                    _overlay?.Apply(evt);
                     break;
                 case "clear":
                     Clear();
+                    _overlay?.Apply(evt);
                     break;
             }
         }
@@ -66,14 +69,18 @@ namespace ARApp.AR
             if (!_raycastManager.Raycast(screenPoint, _hits,
                     TrackableType.PlaneWithinPolygon | TrackableType.FeaturePoint | TrackableType.Depth))
             {
-                Debug.Log("[ar] raycast found no surface for annotation " + evt.Id);
+                // No surface yet: show a flat overlay marker so guidance is visible.
+                Debug.Log("[ar] no surface for annotation " + evt.Id + "; using 2D overlay");
+                _overlay?.Apply(evt);
                 return;
             }
 
             var hit = _hits[0];
 
-            // Replace any existing anchor for this annotation id (update case).
+            // Replace any existing anchor for this annotation id (update case), and
+            // remove any 2D fallback marker now that we have a real world anchor.
             Remove(evt.Id);
+            _overlay?.Apply(new AnnotationEvent { Op = "delete", Id = evt.Id });
 
             var anchor = CreateAnchor(hit);
             if (anchor == null)

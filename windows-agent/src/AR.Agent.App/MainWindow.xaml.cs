@@ -97,6 +97,58 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void OnVideoPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (_session is null)
+            return;
+
+        // Convert the click to normalized (u,v) in [0,1] over the image bounds.
+        var point = e.GetCurrentPoint(VideoImage).Position;
+        if (VideoImage.ActualWidth <= 0 || VideoImage.ActualHeight <= 0)
+            return;
+        var u = Math.Clamp(point.X / VideoImage.ActualWidth, 0, 1);
+        var v = Math.Clamp(point.Y / VideoImage.ActualHeight, 0, 1);
+
+        var annotation = new AnnotationEvent
+        {
+            Op = "create",
+            Id = Guid.NewGuid().ToString(),
+            Kind = SelectedTool(),
+            Point = new NormPoint { U = u, V = v },
+            Color = "#ff3b30",
+        };
+
+        try
+        {
+            _session.SendAnnotation(annotation);
+            SetStatus($"Placed {annotation.Kind} at ({u:F2}, {v:F2}); awaiting anchor…");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not send annotation: {ex.Message}");
+        }
+    }
+
+    private void OnClearAnnotations(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _session?.SendAnnotation(new AnnotationEvent { Op = "clear", Id = Guid.NewGuid().ToString() });
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not clear: {ex.Message}");
+        }
+    }
+
+    private string SelectedTool()
+    {
+        if (CircleTool.IsChecked == true) return "circle";
+        if (TextTool.IsChecked == true) return "text";
+        if (MarkerTool.IsChecked == true) return "marker";
+        return "arrow";
+    }
+
     private void OnConnectionStateChanged(RTCPeerConnectionState state) =>
         SetStatus($"Connection: {state}");
 
