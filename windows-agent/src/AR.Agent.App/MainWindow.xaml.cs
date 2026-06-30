@@ -102,26 +102,43 @@ public sealed partial class MainWindow : Window
         if (_session is null)
             return;
 
-        // Convert the click to normalized (u,v) in [0,1] over the image bounds.
+        // Convert the click to normalized (u,v) over the source frame, accounting
+        // for the letterbox bars of the uniform-fit image. Without the source size
+        // (no frame yet), fall back to control-relative mapping.
         var point = e.GetCurrentPoint(VideoImage).Position;
-        if (VideoImage.ActualWidth <= 0 || VideoImage.ActualHeight <= 0)
-            return;
-        var u = Math.Clamp(point.X / VideoImage.ActualWidth, 0, 1);
-        var v = Math.Clamp(point.Y / VideoImage.ActualHeight, 0, 1);
+        (double U, double V)? norm;
+        if (VideoImage.Source is Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap bmp)
+        {
+            norm = AR.Agent.Core.Geometry.VideoCoords.PointerToNormalized(
+                point.X, point.Y, VideoImage.ActualWidth, VideoImage.ActualHeight,
+                bmp.PixelWidth, bmp.PixelHeight);
+        }
+        else if (VideoImage.ActualWidth > 0 && VideoImage.ActualHeight > 0)
+        {
+            norm = (Math.Clamp(point.X / VideoImage.ActualWidth, 0, 1),
+                    Math.Clamp(point.Y / VideoImage.ActualHeight, 0, 1));
+        }
+        else
+        {
+            norm = null;
+        }
+
+        if (norm is not { } uv)
+            return; // clicked outside the displayed frame
 
         var annotation = new AnnotationEvent
         {
             Op = "create",
             Id = Guid.NewGuid().ToString(),
             Kind = SelectedTool(),
-            Point = new NormPoint { U = u, V = v },
+            Point = new NormPoint { U = uv.U, V = uv.V },
             Color = "#ff3b30",
         };
 
         try
         {
             _session.SendAnnotation(annotation);
-            SetStatus($"Placed {annotation.Kind} at ({u:F2}, {v:F2}); awaiting anchor…");
+            SetStatus($"Placed {annotation.Kind} at ({uv.U:F2}, {uv.V:F2}); awaiting anchor…");
         }
         catch (Exception ex)
         {

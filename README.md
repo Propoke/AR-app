@@ -35,12 +35,19 @@ troubleshooting. Two-way audio runs throughout.
 2. ✅ **Connectivity** — signaling relay + WebRTC handshake proven (VP8/Opus +
    data channel) via the headless interop harness; agent core (.NET/SIPSorcery) and
    Unity client scripts in place. On-device SIPSorcery⇄libwebrtc check pending.
-3. **Live video + audio** *(next)* — render the phone camera in the agent; two-way audio.
-4. Annotation data channel + 2D render.
-5. True world anchoring.
-6. Hardening & release.
+3. ✅ **Live video + audio** — agent renders the phone camera (VP8 decode) and runs
+   two-way Opus audio; Unity streams the AR feed + mic. Bidirectional RTP flow
+   proven by the media interop harness.
+4. ✅ **Annotation data channel + 2D render** — agent toolbar → normalized (u,v) →
+   data channel; phone 2D telestration overlay. Wire contract enforced by the
+   schema-conformance test.
+5. ✅ **True world anchoring** — phone raycasts (u,v) → persistent `ARAnchor`, echoes
+   the anchor id back; letterbox-correct coordinate mapping (unit-tested).
+6. **Hardening & release** *(next)* — recordings, observability, Terraform prod,
+   MSIX + store builds.
 
-See `docs/verification.md` for how each layer is tested.
+See `docs/verification.md` for how each layer is tested. The remaining
+device-only check is SIPSorcery ⇄ libwebrtc on real Windows + phone hardware.
 
 ## Quick start (Phase 1)
 
