@@ -43,11 +43,13 @@ troubleshooting. Two-way audio runs throughout.
    schema-conformance test.
 5. ✅ **True world anchoring** — phone raycasts (u,v) → persistent `ARAnchor`, echoes
    the anchor id back; letterbox-correct coordinate mapping (unit-tested).
-6. **Hardening & release** *(next)* — recordings, observability, Terraform prod,
-   MSIX + store builds.
+6. ✅ **Hardening & release** — signed signaling join tokens, IP rate limiting,
+   Prometheus metrics + readiness, Caddy TLS prod compose, GHCR/MSIX release
+   pipeline. Session recordings + on-device builds are the remaining follow-ups.
 
-See `docs/verification.md` for how each layer is tested. The remaining
-device-only check is SIPSorcery ⇄ libwebrtc on real Windows + phone hardware.
+See `docs/verification.md` for how each layer is tested and `docs/runbook.md` for
+operations. The remaining device-only check is SIPSorcery ⇄ libwebrtc on real
+Windows + phone hardware.
 
 ## Quick start (Phase 1)
 
