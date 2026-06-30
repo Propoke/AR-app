@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propoke.dev/ar-app/annotation.schema.json",
+  "title": "AnnotationEvent",
+  "description": "An AR annotation operation authored by the technician (agent) on a 2D video frame and rendered as a world-anchored marker on the phone. The phone raycasts the normalized point into its ARCore/ARKit scene and attaches a persistent anchor.",
+  "type": "object",
+  "required": ["op", "id"],
+  "properties": {
+    "op": {
+      "type": "string",
+      "enum": ["create", "update", "delete", "clear"],
+      "description": "create: place a new annotation. update: move/restyle. delete: remove one. clear: remove all."
+    },
+    "id": {
+      "type": "string",
+      "description": "Client-generated unique id (UUID) correlating the agent's annotation with the phone's anchor."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["arrow", "circle", "text", "marker", "freehand"],
+      "description": "Visual type. Required for create/update."
+    },
+    "point": {
+      "$ref": "#/$defs/normPoint",
+      "description": "Normalized tap point on the agent's video frame. The phone raycasts this into the AR scene. Required for create."
+    },
+    "path": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/normPoint" },
+      "description": "Ordered normalized points for a freehand stroke."
+    },
+    "frameId": {
+      "type": "integer",
+      "description": "Video frame the point refers to, for timestamp matching. v1 raycasts against the latest frame and tolerates small drift."
+    },
+    "text": {
+      "type": "string",
+      "description": "Label text for kind=text."
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "description": "Marker color as #RRGGBB."
+    },
+    "anchorId": {
+      "type": "string",
+      "description": "Set by the phone in echoed events: the platform AR anchor id backing this annotation."
+    }
+  },
+  "$defs": {
+    "normPoint": {
+      "type": "object",
+      "required": ["u", "v"],
+      "properties": {
+        "u": { "type": "number", "minimum": 0, "maximum": 1, "description": "Horizontal position, 0=left .. 1=right." },
+        "v": { "type": "number", "minimum": 0, "maximum": 1, "description": "Vertical position, 0=top .. 1=bottom." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

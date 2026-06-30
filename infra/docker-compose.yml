@@ -1,0 +1,66 @@
+# Local full-stack development environment for Phase 1.
+# Brings up Postgres, Redis, coturn (STUN/TURN), and the backend.
+#
+#   cd infra && docker compose up --build
+#   curl http://localhost:8080/healthz
+#
+# Configuration defaults live in .env.example; copy it to .env to override.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ar}
+      POSTGRES_DB: ${POSTGRES_DB:-ar}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ar}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  coturn:
+    image: coturn/coturn:4.6
+    # host networking lets coturn allocate relay ports without per-port mapping.
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+  backend:
+    build:
+      context: ../backend
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: "postgres://${POSTGRES_USER:-ar}:${POSTGRES_PASSWORD:-ar}@postgres:5432/${POSTGRES_DB:-ar}?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET: "${JWT_SECRET:-dev-insecure-secret-change-me}"
+      SESSION_TOKEN_TTL: "${SESSION_TOKEN_TTL:-10m}"
+      TURN_SECRET: "${TURN_SECRET:-dev-turn-secret}"
+      TURN_REALM: "${TURN_REALM:-ar.local}"
+      TURN_URLS: "${TURN_URLS:-turn:127.0.0.1:3478?transport=udp}"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

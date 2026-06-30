@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propoke.dev/ar-app/signaling.schema.json",
+  "title": "SignalingEnvelope",
+  "description": "Wire format for messages over the signaling WebSocket (/v1/signaling). The backend relay forwards each message to the other peer in the room, stamping `from`.",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["peer-ready", "offer", "answer", "ice", "annotation", "bye", "error"],
+      "description": "Message type. See shared/README.md for the full table."
+    },
+    "from": {
+      "type": "string",
+      "enum": ["agent", "phone"],
+      "description": "Set by the relay to the sender's role."
+    },
+    "payload": {
+      "description": "Type-specific body. For offer/answer: { sdp }. For ice: an RTCIceCandidateInit. For annotation: an AnnotationEvent (annotation.schema.json)."
+    }
+  },
+  "additionalProperties": false
+}

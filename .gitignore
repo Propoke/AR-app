@@ -1,0 +1,35 @@
+# Go
+/backend/bin/
+/backend/tmp/
+*.test
+*.out
+coverage.*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Build artefacts
+dist/
+build/
+
+# .NET (windows-agent, later)
+[Bb]in/
+[Oo]bj/
+
+# Unity (mobile-client, later)
+/mobile-client/Library/
+/mobile-client/Temp/
+/mobile-client/Obj/
+/mobile-client/Build/
+/mobile-client/Logs/
+/mobile-client/UserSettings/
