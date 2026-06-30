@@ -1,8 +1,22 @@
 # Mobile Client (end-user app)
 
-> **Status: placeholder — implemented in Phase 2+.**
-
 Unity + AR Foundation application for Android (ARCore) and iOS (ARKit).
+
+## Status (Phase 2)
+Core scripts implemented (not yet wired into a Unity scene / built — needs the
+Unity Editor):
+```
+Assets/Scripts/
+  Protocol/Messages.cs              signaling + AnnotationEvent + JoinInfo (mirror shared/*.json)
+  Signaling/SignalingClient.cs      signaling WebSocket (phone role)
+  WebRtc/PhoneSession.cs            Unity.WebRTC: send AR camera (VP8) + audio (Opus), answer offer
+  AR/AnnotationAnchorManager.cs     raycast (u,v) → persistent ARAnchor (the world-anchoring core)
+  SessionController.cs              redeem token → signaling → WebRTC → AR
+Packages/manifest.json              com.unity.webrtc + AR Foundation + ARCore/ARKit + Newtonsoft
+```
+Remaining for an on-device build: a Unity scene with AR session origin, the
+marker prefab, and the token-entry UI; plus blitting the AR camera background into
+the streamed RenderTexture. See `docs/verification.md`.
 
 ## Planned responsibilities
 - Token entry screen: user types `connect_id` + `pin`.

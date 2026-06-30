@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Cross-platform core for the technician app: backend HTTP client, signaling
+    WebSocket client, and the SIPSorcery WebRTC session. Targets net8.0 (no
+    Windows-only APIs) so it builds and is unit-tested in CI on Linux. The WinUI
+    shell (AR.Agent.App) references this and is the only Windows-only piece.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pure-C# WebRTC stack. The Abstractions package provides the codec/media
+         types (VideoFormat, AudioFormat). These versions are a compatible pair. -->
+    <PackageReference Include="SIPSorcery" Version="6.2.4" />
+    <PackageReference Include="SIPSorceryMedia.Abstractions" Version="1.2.1" />
+  </ItemGroup>
+
+</Project>

@@ -1,22 +1,39 @@
 # Windows Agent (technician app)
 
-> **Status: placeholder — implemented in Phase 2+.**
+.NET 8 technician app. The transport/WebRTC logic lives in a cross-platform core
+(`AR.Agent.Core`, `net8.0`) that is unit-tested in CI on Linux; the UI is a
+Windows-only WinUI 3 shell (`AR.Agent.App`).
 
-.NET 8 + WinUI 3 desktop application for the support technician.
+## Layout
+```
+src/AR.Agent.Core/        cross-platform core (builds + tested in CI)
+  Protocol/               SignalingEnvelope, AnnotationEvent (mirror shared/*.json)
+  BackendClient.cs        HTTP: login, mint session token
+  SignalingClient.cs      signaling WebSocket (agent role)
+  SessionConnection.cs    SIPSorcery WebRTC: VP8 recv, Opus 2-way, annotations data channel
+src/AR.Agent.App/         WinUI 3 shell (Windows-only): sign in, start session, status
+tests/AR.Agent.Core.Tests/ xUnit protocol tests
+```
 
-## Planned responsibilities
-- Login / token refresh against the backend (`/v1/auth/*`).
-- Mint a connection token (`POST /v1/sessions`) and display `connect_id` + `pin`
-  for the technician to relay to the end-user.
-- Connect to the signaling WebSocket (`role=agent`), exchange SDP/ICE.
-- WebRTC via **SIPSorcery**: receive the phone's camera (VP8), two-way Opus audio.
-- Annotation toolbar (arrow/circle/text/freehand) → send `AnnotationEvent`s over
-  the WebRTC data channel (`shared/annotation.schema.json`).
-- Session history.
+## Status (Phase 2)
+- ✅ `AR.Agent.Core`: backend client, signaling client, and the SIPSorcery peer
+  connection wired for VP8 + Opus with the `annotations` data channel.
+- ✅ WinUI shell wires sign-in → mint → signaling → WebRTC negotiation.
+- ⏳ Live video rendering + annotation toolbar UI: Phase 3–4.
+
+## Build
+```bash
+# Core + tests build anywhere with the .NET 8 SDK:
+dotnet test tests/AR.Agent.Core.Tests/AR.Agent.Core.Tests.csproj
+
+# The WinUI app builds on Windows (Windows App SDK):
+dotnet build src/AR.Agent.App/AR.Agent.App.csproj
+```
 
 ## Interop constraint
-Lock media to **VP8 video + Opus audio** to interoperate with the Unity client's
-libwebrtc stack. Validate SDP negotiation early (Phase 2) — this is the top risk.
+Media is locked to **VP8 video + Opus audio** to interoperate with the Unity
+client's libwebrtc stack. The standards-based handshake is verified headlessly by
+`interop-harness/`; SIPSorcery ⇄ libwebrtc is confirmed on-device (`docs/verification.md`).
 
 ## Packaging
-Signed **MSIX** installer with auto-update (Phase 6).
+Signed **MSIX** installer with auto-update — Phase 6.

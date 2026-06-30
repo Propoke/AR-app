@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="AR.Agent.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="AR Remote Support — Technician">
+
+    <Grid Padding="24" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Sign in -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+            <TextBox x:Name="EmailBox" PlaceholderText="email" Width="220" />
+            <PasswordBox x:Name="PasswordBox" PlaceholderText="password" Width="180" />
+            <Button x:Name="LoginButton" Content="Sign in" Click="OnLoginClick" />
+        </StackPanel>
+
+        <!-- Start a session -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+            <Button x:Name="StartButton" Content="Start session" Click="OnStartSessionClick" IsEnabled="False" />
+            <TextBlock x:Name="ConnectIdText" FontSize="20" FontFamily="Consolas" VerticalAlignment="Center" />
+            <TextBlock x:Name="PinText" FontSize="20" FontFamily="Consolas" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Status / live video panel placeholder (wired in a later phase) -->
+        <Border Grid.Row="2" Background="#11000000" CornerRadius="8">
+            <TextBlock x:Name="StatusText" Margin="12" Text="Sign in to begin."
+                       TextWrapping="Wrap" VerticalAlignment="Top" />
+        </Border>
+    </Grid>
+</Window>

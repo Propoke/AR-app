@@ -1,0 +1,14 @@
+{
+  "name": "ar-app-interop-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless WebRTC interop harness: drives two peers through the signaling relay and verifies the offer/answer/ICE handshake, VP8+Opus codec negotiation, and the annotations data channel.",
+  "scripts": {
+    "harness": "node src/harness.js"
+  },
+  "dependencies": {
+    "werift": "^0.21.0",
+    "ws": "^8.18.0"
+  }
+}

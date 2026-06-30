@@ -22,6 +22,10 @@ coverage.*
 dist/
 build/
 
+# Node (interop-harness)
+node_modules/
+npm-debug.log*
+
 # .NET (windows-agent, later)
 [Bb]in/
 [Oo]bj/

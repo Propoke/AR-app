@@ -30,13 +30,17 @@ troubleshooting. Two-way audio runs throughout.
 
 ## Delivery phases
 
-1. **Foundations** *(current)* — backend skeleton (identity + session/token), Postgres/Redis,
-   docker-compose, CI. Login + mint/redeem token (no media yet).
-2. Connectivity — signaling + coturn; prove a WebRTC session connects (VP8/Opus).
-3. Live video + audio.
+1. ✅ **Foundations** — backend (identity + session/token), Postgres/Redis,
+   docker-compose, CI. Login + mint/redeem token.
+2. ✅ **Connectivity** — signaling relay + WebRTC handshake proven (VP8/Opus +
+   data channel) via the headless interop harness; agent core (.NET/SIPSorcery) and
+   Unity client scripts in place. On-device SIPSorcery⇄libwebrtc check pending.
+3. **Live video + audio** *(next)* — render the phone camera in the agent; two-way audio.
 4. Annotation data channel + 2D render.
 5. True world anchoring.
 6. Hardening & release.
+
+See `docs/verification.md` for how each layer is tested.
 
 ## Quick start (Phase 1)
 
