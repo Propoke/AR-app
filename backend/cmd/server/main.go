@@ -17,6 +17,7 @@ import (
 	"github.com/propoke/ar-app/backend/internal/httpapi"
 	"github.com/propoke/ar-app/backend/internal/identity"
 	"github.com/propoke/ar-app/backend/internal/metrics"
+	"github.com/propoke/ar-app/backend/internal/ratelimit"
 	"github.com/propoke/ar-app/backend/internal/session"
 	"github.com/propoke/ar-app/backend/internal/signaling"
 	"github.com/propoke/ar-app/backend/internal/store"
@@ -74,12 +75,14 @@ func run(logger *slog.Logger) error {
 	}
 
 	handler := httpapi.New(httpapi.Deps{
-		Identity:  identity.NewHandlers(identitySvc, issuer),
-		Session:   session.NewHandlers(sessionSvc),
-		Signaling: signaling.NewHandler(hub, logger, signalingAuth),
-		Issuer:    issuer,
-		Logger:    logger,
-		Readiness: readinessHandler(st),
+		Identity:      identity.NewHandlers(identitySvc, issuer),
+		Session:       session.NewHandlers(sessionSvc),
+		Signaling:     signaling.NewHandler(hub, logger, signalingAuth),
+		Issuer:        issuer,
+		Logger:        logger,
+		Readiness:     readinessHandler(st),
+		AuthLimiter:   ratelimit.New(ratelimit.NewRedisStore(st.Redis), 10, time.Minute, logger),
+		RedeemLimiter: ratelimit.New(ratelimit.NewRedisStore(st.Redis), 20, time.Minute, logger),
 	})
 
 	// Sample the active signaling room count into the Prometheus gauge.

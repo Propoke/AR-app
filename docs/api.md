@@ -1,9 +1,14 @@
-# Backend API (Phase 1)
+# Backend API
 
 Base URL (local): `http://localhost:8080`
 
 All request/response bodies are JSON. Authenticated endpoints require
 `Authorization: Bearer <access_token>`.
+
+**Rate limits:** `/v1/auth/login` and `/v1/sessions/redeem` are throttled per
+client IP (10/min and 20/min respectively); exceeding the limit returns `429` with
+a `Retry-After` header. `/metrics` (Prometheus) and `/readyz` (dependency
+readiness) are also exposed.
 
 ## Health
 

@@ -12,6 +12,7 @@ import (
 	"github.com/propoke/ar-app/backend/internal/auth"
 	"github.com/propoke/ar-app/backend/internal/identity"
 	"github.com/propoke/ar-app/backend/internal/metrics"
+	"github.com/propoke/ar-app/backend/internal/ratelimit"
 	"github.com/propoke/ar-app/backend/internal/session"
 	"github.com/propoke/ar-app/backend/internal/signaling"
 )
@@ -25,6 +26,10 @@ type Deps struct {
 	Logger    *slog.Logger
 	// Readiness reports 200 when dependencies (DB, Redis) are reachable, else 503.
 	Readiness http.HandlerFunc
+	// AuthLimiter and RedeemLimiter throttle brute-force attempts. Optional (nil
+	// disables throttling for that route).
+	AuthLimiter   *ratelimit.Limiter
+	RedeemLimiter *ratelimit.Limiter
 }
 
 // New builds the top-level HTTP handler with all routes and global middleware.
@@ -42,14 +47,14 @@ func New(d Deps) http.Handler {
 	}
 	mux.Handle("GET /metrics", metrics.Handler())
 
-	// Public auth endpoints.
+	// Public auth endpoints. Login is throttled per client IP.
 	mux.HandleFunc("POST /v1/auth/register", d.Identity.Register)
-	mux.HandleFunc("POST /v1/auth/login", d.Identity.Login)
+	mux.HandleFunc("POST /v1/auth/login", throttle(d.AuthLimiter, "login", d.Identity.Login))
 	mux.HandleFunc("POST /v1/auth/refresh", d.Identity.Refresh)
 
 	// Public token redeem (the phone presents connect id + PIN; the token is the
-	// credential, so no bearer auth here).
-	mux.HandleFunc("POST /v1/sessions/redeem", d.Session.Redeem)
+	// credential, so no bearer auth here). Throttled per client IP.
+	mux.HandleFunc("POST /v1/sessions/redeem", throttle(d.RedeemLimiter, "redeem", d.Session.Redeem))
 
 	// Signaling WebSocket (room id is the bearer in Phase 1; see handler note).
 	mux.HandleFunc("GET /v1/signaling", d.Signaling.ServeWS)
@@ -62,6 +67,14 @@ func New(d Deps) http.Handler {
 	mux.Handle("/v1/sessions", d.Issuer.Middleware(authed))
 
 	return instrument(logging(d.Logger, recoverer(d.Logger, mux)))
+}
+
+// throttle wraps a handler with the limiter if one is configured.
+func throttle(l *ratelimit.Limiter, prefix string, h http.HandlerFunc) http.HandlerFunc {
+	if l == nil {
+		return h
+	}
+	return l.Middleware(prefix, h)
 }
 
 // instrument records request metrics. Paths in this API are low-cardinality
