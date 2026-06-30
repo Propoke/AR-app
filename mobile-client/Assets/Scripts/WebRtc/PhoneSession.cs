@@ -40,10 +40,15 @@ namespace ARApp.WebRtc
         }
 
         /// <summary>
-        /// Builds the peer connection with the backend's ICE servers and attaches
-        /// the AR camera RenderTexture as the outgoing video track.
+        /// Builds the peer connection with the backend's ICE servers, attaches the
+        /// AR camera RenderTexture as the outgoing video track, the microphone as the
+        /// outgoing audio track, and routes received audio to <paramref name="playbackSource"/>.
         /// </summary>
-        public void Setup(List<IceServerInfo> iceServers, RenderTexture arCameraTexture)
+        public void Setup(
+            List<IceServerInfo> iceServers,
+            RenderTexture arCameraTexture,
+            AudioSource microphoneSource,
+            AudioSource playbackSource)
         {
             var config = BuildConfig(iceServers);
             _pc = new RTCPeerConnection(ref config);
@@ -51,8 +56,20 @@ namespace ARApp.WebRtc
             _videoTrack = new VideoStreamTrack(arCameraTexture);
             _pc.AddTrack(_videoTrack);
 
-            _audioTrack = new AudioStreamTrack(); // microphone is wired by SessionController
+            // The microphone AudioSource (a looping mic clip) becomes the audio track.
+            _audioTrack = new AudioStreamTrack(microphoneSource);
             _pc.AddTrack(_audioTrack);
+
+            // Play the technician's audio through the playback AudioSource.
+            _pc.OnTrack = evt =>
+            {
+                if (evt.Track is AudioStreamTrack incoming)
+                {
+                    playbackSource.SetTrack(incoming);
+                    playbackSource.loop = true;
+                    playbackSource.Play();
+                }
+            };
 
             _pc.OnIceCandidate = candidate =>
             {

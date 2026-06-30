@@ -26,10 +26,14 @@
             <TextBlock x:Name="PinText" FontSize="20" FontFamily="Consolas" VerticalAlignment="Center" />
         </StackPanel>
 
-        <!-- Status / live video panel placeholder (wired in a later phase) -->
+        <!-- Live video panel + status overlay -->
         <Border Grid.Row="2" Background="#11000000" CornerRadius="8">
-            <TextBlock x:Name="StatusText" Margin="12" Text="Sign in to begin."
-                       TextWrapping="Wrap" VerticalAlignment="Top" />
+            <Grid>
+                <Image x:Name="VideoImage" Stretch="Uniform" />
+                <TextBlock x:Name="StatusText" Margin="12" Text="Sign in to begin."
+                           TextWrapping="Wrap" VerticalAlignment="Bottom"
+                           HorizontalAlignment="Left" />
+            </Grid>
         </Border>
     </Grid>
 </Window>

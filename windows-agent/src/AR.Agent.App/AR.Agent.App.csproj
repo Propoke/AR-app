@@ -23,6 +23,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.240829007" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+    <!-- Native media for the Windows build: microphone/speaker and VP8 decode.
+         These carry native binaries, so this project is Windows-only (not CI-built). -->
+    <PackageReference Include="SIPSorceryMedia.Windows" Version="0.0.74" />
+    <PackageReference Include="SIPSorceryMedia.Encoders" Version="0.0.12-pre" />
   </ItemGroup>
 
   <ItemGroup>

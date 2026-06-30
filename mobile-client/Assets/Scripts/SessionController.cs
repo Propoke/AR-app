@@ -25,7 +25,9 @@ namespace ARApp
         [SerializeField] private string _wsBaseUrl = "ws://localhost:8080";
 
         [Header("Scene wiring")]
-        [SerializeField] private Camera _arCamera;
+        [SerializeField] private ARApp.AR.ARCameraStreamer _cameraStreamer;
+        [SerializeField] private AudioSource _microphoneSource;
+        [SerializeField] private AudioSource _playbackSource;
         [SerializeField] private PhoneSession _session;
         [SerializeField] private AnnotationAnchorManager _anchorManager;
 
@@ -62,15 +64,14 @@ namespace ARApp
 
         private void StartSession(JoinInfo join)
         {
-            // Render the AR camera into a texture to use as the outgoing video track.
-            // (Blitting the ARCameraBackground into this texture is finalized in the
-            //  AR scene setup; the track streams whatever this RenderTexture holds.)
+            // Capture the live AR feed into a texture used as the outgoing video
+            // track (without hijacking the on-screen AR view).
             _cameraTexture = new RenderTexture(1280, 720, 0, RenderTextureFormat.BGRA32);
             _cameraTexture.Create();
-            if (_arCamera != null)
-                _arCamera.targetTexture = _cameraTexture;
+            _cameraStreamer.Begin(_cameraTexture);
 
-            _session.Setup(join.IceServers, _cameraTexture);
+            StartMicrophone();
+            _session.Setup(join.IceServers, _cameraTexture, _microphoneSource, _playbackSource);
 
             _session.OnLocalAnswer = sdp =>
                 _ = _signaling.SendAsync("answer", new SdpPayload { Sdp = sdp });
@@ -113,6 +114,18 @@ namespace ARApp
             }
         }
 
+        // Starts the device microphone into a looping clip that feeds the audio track.
+        private void StartMicrophone()
+        {
+            if (_microphoneSource == null)
+                return;
+            var device = Microphone.devices.Length > 0 ? Microphone.devices[0] : null;
+            _microphoneSource.clip = Microphone.Start(device, true, 1, 48000);
+            _microphoneSource.loop = true;
+            // The clip fills asynchronously; AudioStreamTrack streams it once playing.
+            _microphoneSource.Play();
+        }
+
         private void Update()
         {
             while (_mainThread.TryDequeue(out var action))
@@ -122,11 +135,10 @@ namespace ARApp
         private void OnDestroy()
         {
             _signaling?.Dispose();
+            if (_cameraStreamer != null)
+                _cameraStreamer.Stop();
             if (_cameraTexture != null)
-            {
-                if (_arCamera != null) _arCamera.targetTexture = null;
                 _cameraTexture.Release();
-            }
         }
 
         // env.Payload arrives as a Newtonsoft JObject; convert to the concrete type.

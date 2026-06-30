@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using AR.Agent.App.Media;
 using AR.Agent.Core;
 using AR.Agent.Core.Protocol;
 using Microsoft.UI.Dispatching;
@@ -66,6 +67,12 @@ public sealed partial class MainWindow : Window
             _session = new SessionConnection(_signaling, minted.IceServers);
             _session.ConnectionStateChanged += OnConnectionStateChanged;
             _session.AnnotationReceived += OnAnnotationReceived;
+
+            // Attach Windows audio + VP8 decode so the phone's camera renders in the
+            // panel and two-way audio flows.
+            var audio = new WindowsAudioDevice();
+            var renderer = new WriteableBitmapRenderer(_dispatcher, bmp => VideoImage.Source = bmp);
+            _session.AttachMedia(audio, audio, new Vp8VideoDecoder(), renderer);
         }
         catch (Exception ex)
         {

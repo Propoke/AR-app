@@ -1,5 +1,7 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
+using AR.Agent.Core.Media;
 using AR.Agent.Core.Protocol;
 using SIPSorcery.Net;
 using SIPSorceryMedia.Abstractions;
@@ -28,6 +30,11 @@ public sealed class SessionConnection : IAsyncDisposable
 
     /// <summary>Raised on every peer-connection state change.</summary>
     public event Action<RTCPeerConnectionState>? ConnectionStateChanged;
+
+    private IMicrophone? _microphone;
+    private ISpeaker? _speaker;
+    private IVideoDecoder? _videoDecoder;
+    private IVideoRenderer? _videoRenderer;
 
     public SessionConnection(SignalingClient signaling, IReadOnlyList<IceServer> iceServers)
     {
@@ -66,6 +73,45 @@ public sealed class SessionConnection : IAsyncDisposable
         };
 
         _signaling.EnvelopeReceived += OnSignalingEnvelope;
+    }
+
+    /// <summary>
+    /// Wires audio and video devices to the session: the microphone's encoded
+    /// samples are sent to the phone, received audio is played on the speaker, and
+    /// received video frames are decoded and rendered. Call before StartAsync.
+    /// </summary>
+    public void AttachMedia(IMicrophone microphone, ISpeaker speaker, IVideoDecoder videoDecoder, IVideoRenderer videoRenderer)
+    {
+        _microphone = microphone;
+        _speaker = speaker;
+        _videoDecoder = videoDecoder;
+        _videoRenderer = videoRenderer;
+
+        // Outgoing audio: the microphone produces encoded Opus samples we forward.
+        _microphone.EncodedSampleReady += (durationRtpUnits, sample) =>
+        {
+            try { _pc.SendAudio(durationRtpUnits, sample); }
+            catch { /* connection may be tearing down */ }
+        };
+
+        // Incoming media: decode video frames to render, and play received audio.
+        _pc.OnVideoFrameReceived += OnVideoFrame;
+        _pc.OnRtpPacketReceived += OnRtpPacket;
+
+        _microphone.Start();
+    }
+
+    private void OnVideoFrame(IPEndPoint _, uint __, byte[] encodedSample, VideoFormat ___)
+    {
+        var frame = _videoDecoder?.Decode(encodedSample);
+        if (frame is { } f)
+            _videoRenderer?.Render(f);
+    }
+
+    private void OnRtpPacket(IPEndPoint _, SDPMediaTypesEnum mediaType, RTPPacket packet)
+    {
+        if (mediaType == SDPMediaTypesEnum.audio)
+            _speaker?.PlayEncoded(packet.Payload);
     }
 
     /// <summary>
@@ -179,6 +225,7 @@ public sealed class SessionConnection : IAsyncDisposable
     public ValueTask DisposeAsync()
     {
         _signaling.EnvelopeReceived -= OnSignalingEnvelope;
+        _microphone?.Stop();
         _annotations?.close();
         _pc.close();
         return ValueTask.CompletedTask;
