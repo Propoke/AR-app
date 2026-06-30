@@ -117,6 +117,13 @@ func (h *Hub) Relay(roomID string, sender Peer, frame []byte) bool {
 	return delivered
 }
 
+// RoomCount returns the number of active rooms (for metrics).
+func (h *Hub) RoomCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.rooms)
+}
+
 // Counterpart returns the other peer in the room, if present.
 func (h *Hub) Counterpart(roomID string, self Peer) (Peer, bool) {
 	h.mu.RLock()

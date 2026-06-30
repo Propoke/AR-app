@@ -11,6 +11,7 @@ import (
 
 	"github.com/propoke/ar-app/backend/internal/auth"
 	"github.com/propoke/ar-app/backend/internal/identity"
+	"github.com/propoke/ar-app/backend/internal/metrics"
 	"github.com/propoke/ar-app/backend/internal/session"
 	"github.com/propoke/ar-app/backend/internal/signaling"
 )
@@ -22,6 +23,8 @@ type Deps struct {
 	Signaling *signaling.Handler
 	Issuer    *auth.Issuer
 	Logger    *slog.Logger
+	// Readiness reports 200 when dependencies (DB, Redis) are reachable, else 503.
+	Readiness http.HandlerFunc
 }
 
 // New builds the top-level HTTP handler with all routes and global middleware.
@@ -32,6 +35,12 @@ func New(d Deps) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	// Readiness probe and Prometheus scrape endpoint.
+	if d.Readiness != nil {
+		mux.HandleFunc("GET /readyz", d.Readiness)
+	}
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	// Public auth endpoints.
 	mux.HandleFunc("POST /v1/auth/register", d.Identity.Register)
@@ -52,7 +61,15 @@ func New(d Deps) http.Handler {
 	mux.Handle("/v1/me", d.Issuer.Middleware(authed))
 	mux.Handle("/v1/sessions", d.Issuer.Middleware(authed))
 
-	return logging(d.Logger, recoverer(d.Logger, mux))
+	return instrument(logging(d.Logger, recoverer(d.Logger, mux)))
+}
+
+// instrument records request metrics. Paths in this API are low-cardinality
+// (no ids are embedded in the path), so the raw path is a safe metric label.
+func instrument(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		metrics.Middleware(r.URL.Path, next.ServeHTTP)(w, r)
+	})
 }
 
 // logging emits one structured line per request with method, path, status, and latency.

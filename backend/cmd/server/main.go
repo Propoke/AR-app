@@ -16,6 +16,7 @@ import (
 	"github.com/propoke/ar-app/backend/internal/config"
 	"github.com/propoke/ar-app/backend/internal/httpapi"
 	"github.com/propoke/ar-app/backend/internal/identity"
+	"github.com/propoke/ar-app/backend/internal/metrics"
 	"github.com/propoke/ar-app/backend/internal/session"
 	"github.com/propoke/ar-app/backend/internal/signaling"
 	"github.com/propoke/ar-app/backend/internal/store"
@@ -78,7 +79,11 @@ func run(logger *slog.Logger) error {
 		Signaling: signaling.NewHandler(hub, logger, signalingAuth),
 		Issuer:    issuer,
 		Logger:    logger,
+		Readiness: readinessHandler(st),
 	})
+
+	// Sample the active signaling room count into the Prometheus gauge.
+	go sampleRooms(ctx, hub)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -103,5 +108,37 @@ func run(logger *slog.Logger) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// readinessHandler reports 200 only when Postgres and Redis are both reachable.
+func readinessHandler(st *store.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := st.DB.Ping(ctx); err != nil {
+			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if err := st.Redis.Ping(ctx).Err(); err != nil {
+			http.Error(w, "redis unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ready"))
+	}
+}
+
+// sampleRooms periodically publishes the active room count to the metrics gauge.
+func sampleRooms(ctx context.Context, hub *signaling.Hub) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			metrics.SignalingRooms.Set(float64(hub.RoomCount()))
+		}
 	}
 }

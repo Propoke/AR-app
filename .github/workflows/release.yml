@@ -1,0 +1,72 @@
+name: Release
+
+# Builds distributable artefacts on a version tag. The backend image is pushed to
+# GHCR; the Windows agent is built and uploaded as an artifact; the Unity client
+# build is gated on a Unity license secret (see notes in the job).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  backend-image:
+    name: Backend image -> GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/backend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}/backend:latest
+
+  windows-agent:
+    name: Windows agent (WinUI)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build agent (Release, x64)
+        run: >
+          dotnet build windows-agent/src/AR.Agent.App/AR.Agent.App.csproj
+          -c Release -p:Platform=x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ar-agent-win-x64
+          path: windows-agent/src/AR.Agent.App/bin/x64/Release/
+
+  unity-client:
+    name: Unity client (Android)
+    runs-on: ubuntu-latest
+    # Requires a Unity license. Set the repository variable ENABLE_UNITY_BUILD to
+    # "true" and provide UNITY_LICENSE/UNITY_EMAIL/UNITY_PASSWORD secrets to enable;
+    # otherwise this job is skipped. (secrets cannot be used in a job-level `if`.)
+    if: ${{ vars.ENABLE_UNITY_BUILD == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: mobile-client
+          targetPlatform: Android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ar-client-android
+          path: build/Android

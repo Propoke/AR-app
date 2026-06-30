@@ -1,0 +1,23 @@
+# Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
+# {$DOMAIN} is supplied via the environment in docker-compose.prod.yml.
+#
+# WebSocket upgrades (/v1/signaling) are proxied transparently by Caddy.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Health/readiness are proxied too, so external probes can reach them.
+	reverse_proxy backend:8080
+
+	# Long timeouts for the signaling WebSocket (sessions can be lengthy).
+	@ws path /v1/signaling
+	reverse_proxy @ws backend:8080 {
+		flush_interval -1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+}

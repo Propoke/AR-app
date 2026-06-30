@@ -1,0 +1,77 @@
+# Production-leaning compose: backend behind Caddy (automatic HTTPS), with
+# Postgres, Redis, and coturn. Secrets and the domain come from the environment
+# (use a real .env, a secret store, or your orchestrator). Unlike the dev compose,
+# database/cache ports are NOT published to the host.
+#
+#   DOMAIN=support.example.com docker compose -f docker-compose.prod.yml up -d
+#
+# coturn still needs a public IP and its UDP relay range open in the host firewall.
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: "postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET: "${JWT_SECRET:?set a strong secret}"
+      SESSION_TOKEN_TTL: "${SESSION_TOKEN_TTL:-10m}"
+      SIGNALING_TOKEN_TTL: "${SIGNALING_TOKEN_TTL:-4h}"
+      TURN_SECRET: "${TURN_SECRET:?}"
+      TURN_REALM: "${TURN_REALM:-ar.local}"
+      TURN_URLS: "${TURN_URLS:?e.g. turn:turn.example.com:3478?transport=udp}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:?}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  coturn:
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
