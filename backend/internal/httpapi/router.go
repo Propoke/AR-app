@@ -13,6 +13,7 @@ import (
 	"github.com/propoke/ar-app/backend/internal/identity"
 	"github.com/propoke/ar-app/backend/internal/metrics"
 	"github.com/propoke/ar-app/backend/internal/ratelimit"
+	"github.com/propoke/ar-app/backend/internal/recordings"
 	"github.com/propoke/ar-app/backend/internal/session"
 	"github.com/propoke/ar-app/backend/internal/signaling"
 )
@@ -30,6 +31,8 @@ type Deps struct {
 	// disables throttling for that route).
 	AuthLimiter   *ratelimit.Limiter
 	RedeemLimiter *ratelimit.Limiter
+	// Recordings is optional; nil disables the recording endpoints.
+	Recordings *recordings.Handlers
 }
 
 // New builds the top-level HTTP handler with all routes and global middleware.
@@ -59,12 +62,19 @@ func New(d Deps) http.Handler {
 	// Signaling WebSocket (room id is the bearer in Phase 1; see handler note).
 	mux.HandleFunc("GET /v1/signaling", d.Signaling.ServeWS)
 
-	// Authenticated endpoints.
-	authed := http.NewServeMux()
-	authed.HandleFunc("GET /v1/me", d.Identity.Me)
-	authed.HandleFunc("POST /v1/sessions", d.Session.Mint)
-	mux.Handle("/v1/me", d.Issuer.Middleware(authed))
-	mux.Handle("/v1/sessions", d.Issuer.Middleware(authed))
+	// Authenticated endpoints (per-route, so {id} path values are available).
+	authed := func(h http.HandlerFunc) http.Handler {
+		return d.Issuer.Middleware(http.HandlerFunc(h))
+	}
+	mux.Handle("GET /v1/me", authed(d.Identity.Me))
+	mux.Handle("POST /v1/sessions", authed(d.Session.Mint))
+
+	// Session recordings (optional; only when object storage is configured).
+	if d.Recordings != nil {
+		mux.Handle("POST /v1/sessions/{id}/recordings", authed(d.Recordings.CreateUpload))
+		mux.Handle("GET /v1/sessions/{id}/recordings", authed(d.Recordings.List))
+		mux.Handle("POST /v1/recordings/{id}/complete", authed(d.Recordings.Complete))
+	}
 
 	return instrument(logging(d.Logger, recoverer(d.Logger, mux)))
 }

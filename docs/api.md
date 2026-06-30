@@ -96,6 +96,25 @@ curl -sX POST http://localhost:8080/v1/sessions/redeem \
 
 Errors: `401` invalid/expired token, `429` too many attempts.
 
+## Session recordings (optional)
+
+Available only when the backend has object storage configured (`S3_ENDPOINT`).
+Clients upload bytes directly to the bucket via a presigned URL; the backend never
+proxies media. All endpoints require a Bearer access token.
+
+### Request an upload URL
+`POST /v1/sessions/{id}/recordings` (body optional: `{"content_type":"video/webm"}`)
+```json
+{ "recording_id": "…", "object_key": "recordings/…/….webm", "upload_url": "https://…", "expires_in_seconds": 900 }
+```
+The client then `PUT`s the recording bytes to `upload_url`.
+
+### Finalize after upload
+`POST /v1/recordings/{id}/complete` with `{"size_bytes": 12345}` → `{ "status": "available" }`.
+
+### List a session's recordings
+`GET /v1/sessions/{id}/recordings` → `{ "recordings": [ … ] }`.
+
 ## Signaling WebSocket
 
 ```
