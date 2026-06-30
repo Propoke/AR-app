@@ -30,5 +30,8 @@ for _ in $(seq 1 50); do
   sleep 0.1
 done
 
-echo "[run] running harness"
+echo "[run] running negotiation + data-channel harness"
 SIGNALING_URL="ws://127.0.0.1:$PORT" node "$HERE/src/harness.js"
+
+echo "[run] running media-flow harness"
+SIGNALING_URL="ws://127.0.0.1:$PORT" node "$HERE/src/media-harness.js"
