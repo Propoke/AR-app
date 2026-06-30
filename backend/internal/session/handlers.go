@@ -35,14 +35,15 @@ func (h *Handlers) Mint(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusInternalServerError, "could not mint token")
 		return
 	}
-	// Include ICE servers so the agent can pre-configure its peer connection.
+	// Include ICE servers + the agent's signaling join token so it can connect.
 	httputil.WriteJSON(w, http.StatusCreated, map[string]any{
-		"session_id":  tok.SessionID,
-		"connect_id":  tok.ConnectID,
-		"pin":         tok.PIN,
-		"expires_at":  tok.ExpiresAt,
-		"room":        tok.SessionID.String(),
-		"ice_servers": h.svc.ICEServers(tok.SessionID),
+		"session_id":      tok.SessionID,
+		"connect_id":      tok.ConnectID,
+		"pin":             tok.PIN,
+		"expires_at":      tok.ExpiresAt,
+		"room":            tok.SessionID.String(),
+		"signaling_token": tok.SignalingToken,
+		"ice_servers":     h.svc.ICEServers(tok.SessionID),
 	})
 }
 

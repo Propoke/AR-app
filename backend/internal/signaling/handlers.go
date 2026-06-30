@@ -55,15 +55,22 @@ type envelope struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
+// Authorizer validates that a token permits joining room as role. Returning a
+// non-nil error rejects the connection. A nil Authorizer disables token checks
+// (used by the DB-free dev relay and interop tests).
+type Authorizer func(room, role, token string) error
+
 // Handler upgrades a request to a WebSocket and relays signaling for a room.
 type Handler struct {
-	hub *Hub
-	log *slog.Logger
+	hub  *Hub
+	log  *slog.Logger
+	auth Authorizer
 }
 
-// NewHandler constructs a signaling Handler.
-func NewHandler(hub *Hub, log *slog.Logger) *Handler {
-	return &Handler{hub: hub, log: log}
+// NewHandler constructs a signaling Handler. Pass a nil Authorizer to disable
+// token enforcement (development only).
+func NewHandler(hub *Hub, log *slog.Logger, auth Authorizer) *Handler {
+	return &Handler{hub: hub, log: log, auth: auth}
 }
 
 // ServeWS handles GET /v1/signaling?room=<id>&role=<agent|phone>.
@@ -80,6 +87,14 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	if role != RoleAgent && role != RolePhone {
 		http.Error(w, "role must be agent or phone", http.StatusBadRequest)
 		return
+	}
+
+	// Authorize with the per-session signaling token, if enforcement is enabled.
+	if h.auth != nil {
+		if err := h.auth(room, string(role), r.URL.Query().Get("token")); err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)

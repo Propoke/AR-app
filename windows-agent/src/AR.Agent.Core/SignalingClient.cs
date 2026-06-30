@@ -21,10 +21,14 @@ public sealed class SignalingClient : IAsyncDisposable
     /// <param name="baseWsUrl">e.g. wss://api.example.com (no path).</param>
     public SignalingClient(Uri baseWsUrl) => _baseWsUrl = baseWsUrl;
 
-    /// <summary>Opens the WebSocket for the given room as the agent role.</summary>
-    public async Task ConnectAsync(string room, CancellationToken ct = default)
+    /// <summary>
+    /// Opens the WebSocket for the given room as the agent role, presenting the
+    /// per-session signaling join token.
+    /// </summary>
+    public async Task ConnectAsync(string room, string signalingToken, CancellationToken ct = default)
     {
-        var url = new Uri(_baseWsUrl, $"/v1/signaling?room={Uri.EscapeDataString(room)}&role=agent");
+        var url = new Uri(_baseWsUrl,
+            $"/v1/signaling?room={Uri.EscapeDataString(room)}&role=agent&token={Uri.EscapeDataString(signalingToken)}");
         await _ws.ConnectAsync(url, ct).ConfigureAwait(false);
     }
 

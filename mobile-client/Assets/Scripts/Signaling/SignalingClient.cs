@@ -24,9 +24,10 @@ namespace ARApp.Signaling
 
         public SignalingClient(Uri baseWsUrl) => _baseWsUrl = baseWsUrl;
 
-        public async Task ConnectAsync(string room)
+        public async Task ConnectAsync(string room, string signalingToken)
         {
-            var url = new Uri(_baseWsUrl, $"/v1/signaling?room={Uri.EscapeDataString(room)}&role=phone");
+            var url = new Uri(_baseWsUrl,
+                $"/v1/signaling?room={Uri.EscapeDataString(room)}&role=phone&token={Uri.EscapeDataString(signalingToken)}");
             await _ws.ConnectAsync(url, _cts.Token);
             _ = Task.Run(ReceiveLoop);
         }

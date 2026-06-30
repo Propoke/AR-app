@@ -61,7 +61,7 @@ public sealed partial class MainWindow : Window
 
             _signaling = new SignalingClient(SignalingBaseUrl);
             _signaling.EnvelopeReceived += OnEnvelope;
-            await _signaling.ConnectAsync(minted.Room);
+            await _signaling.ConnectAsync(minted.Room, minted.SignalingToken);
             _ = Task.Run(() => _signaling.ReceiveLoopAsync());
 
             _session = new SessionConnection(_signaling, minted.IceServers);

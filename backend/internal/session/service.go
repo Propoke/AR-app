@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/propoke/ar-app/backend/internal/auth"
 	"github.com/propoke/ar-app/backend/internal/turn"
 )
 
@@ -33,22 +34,28 @@ const (
 	connectIDDigits = 9
 	pinDigits       = 6
 	maxRedeemTries  = 5
+
+	roleAgent = "agent"
+	rolePhone = "phone"
 )
 
 // Token is the minted connection token returned to the technician.
 type Token struct {
-	SessionID uuid.UUID `json:"session_id"`
-	ConnectID string    `json:"connect_id"`
-	PIN       string    `json:"pin"`
-	ExpiresAt time.Time `json:"expires_at"`
+	SessionID      uuid.UUID `json:"session_id"`
+	ConnectID      string    `json:"connect_id"`
+	PIN            string    `json:"pin"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	SignalingToken string    `json:"signaling_token"`
 }
 
 // JoinInfo is returned to the phone after a successful redeem; it contains the
-// signaling room and the ICE servers needed to establish the WebRTC connection.
+// signaling room, a signaling join token, and the ICE servers needed to
+// establish the WebRTC connection.
 type JoinInfo struct {
-	SessionID  uuid.UUID        `json:"session_id"`
-	Room       string           `json:"room"`
-	ICEServers []turn.ICEServer `json:"ice_servers"`
+	SessionID      uuid.UUID        `json:"session_id"`
+	Room           string           `json:"room"`
+	SignalingToken string           `json:"signaling_token"`
+	ICEServers     []turn.ICEServer `json:"ice_servers"`
 }
 
 // tokenRecord is the ephemeral state stored in Redis for an outstanding token.
@@ -61,15 +68,16 @@ type tokenRecord struct {
 
 // Service mints and redeems connection tokens.
 type Service struct {
-	db    *pgxpool.Pool
-	redis *redis.Client
-	turn  *turn.Minter
-	ttl   time.Duration
+	db     *pgxpool.Pool
+	redis  *redis.Client
+	turn   *turn.Minter
+	issuer *auth.Issuer
+	ttl    time.Duration
 }
 
 // NewService constructs a session Service.
-func NewService(db *pgxpool.Pool, rdb *redis.Client, turn *turn.Minter, ttl time.Duration) *Service {
-	return &Service{db: db, redis: rdb, turn: turn, ttl: ttl}
+func NewService(db *pgxpool.Pool, rdb *redis.Client, turn *turn.Minter, issuer *auth.Issuer, ttl time.Duration) *Service {
+	return &Service{db: db, redis: rdb, turn: turn, issuer: issuer, ttl: ttl}
 }
 
 // Mint creates a new pending session and a single-use connection token for it.
@@ -114,11 +122,16 @@ func (s *Service) Mint(ctx context.Context, orgID, agentID uuid.UUID) (Token, er
 			return Token{}, fmt.Errorf("store token: %w", rerr)
 		}
 		if ok {
+			sigTok, err := s.issuer.IssueSignaling(sessionID.String(), string(roleAgent))
+			if err != nil {
+				return Token{}, fmt.Errorf("issue signaling token: %w", err)
+			}
 			return Token{
-				SessionID: sessionID,
-				ConnectID: connectID,
-				PIN:       pin,
-				ExpiresAt: expiresAt,
+				SessionID:      sessionID,
+				ConnectID:      connectID,
+				PIN:            pin,
+				ExpiresAt:      expiresAt,
+				SignalingToken: sigTok,
 			}, nil
 		}
 		// Connect ID already in use; roll back the orphaned session and retry.
@@ -177,10 +190,16 @@ func (s *Service) Redeem(ctx context.Context, connectID, pin string) (JoinInfo, 
 		return JoinInfo{}, fmt.Errorf("activate session: %w", err)
 	}
 
+	sigTok, err := s.issuer.IssueSignaling(sessionID.String(), string(rolePhone))
+	if err != nil {
+		return JoinInfo{}, fmt.Errorf("issue signaling token: %w", err)
+	}
+
 	return JoinInfo{
-		SessionID:  sessionID,
-		Room:       sessionID.String(),
-		ICEServers: s.turn.Credentials(sessionID.String()),
+		SessionID:      sessionID,
+		Room:           sessionID.String(),
+		SignalingToken: sigTok,
+		ICEServers:     s.turn.Credentials(sessionID.String()),
 	}, nil
 }
 

@@ -22,7 +22,8 @@ func main() {
 	}
 
 	hub := signaling.NewHub()
-	handler := signaling.NewHandler(hub, logger)
+	// Dev relay: no token enforcement (nil authorizer).
+	handler := signaling.NewHandler(hub, logger, nil)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {

@@ -23,6 +23,9 @@ type Config struct {
 	// SessionTokenTTL is how long a connection token (ID + PIN) stays valid.
 	SessionTokenTTL time.Duration
 
+	// SignalingTokenTTL bounds a signaling join token's lifetime (a session's max length).
+	SignalingTokenTTL time.Duration
+
 	// TURNSecret is the shared secret used to mint coturn TURN REST credentials.
 	TURNSecret  string
 	TURNRealm   string
@@ -51,6 +54,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if c.SessionTokenTTL, err = getdur("SESSION_TOKEN_TTL", 10*time.Minute); err != nil {
+		return nil, err
+	}
+	if c.SignalingTokenTTL, err = getdur("SIGNALING_TOKEN_TTL", 4*time.Hour); err != nil {
 		return nil, err
 	}
 	if c.TURNCredTTL, err = getdur("TURN_CRED_TTL", 1*time.Hour); err != nil {

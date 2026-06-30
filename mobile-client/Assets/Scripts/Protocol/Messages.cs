@@ -58,6 +58,7 @@ namespace ARApp.Protocol
     {
         [JsonProperty("session_id")] public string SessionId;
         [JsonProperty("room")] public string Room;
+        [JsonProperty("signaling_token")] public string SignalingToken;
         [JsonProperty("ice_servers")] public List<IceServerInfo> IceServers;
     }
 

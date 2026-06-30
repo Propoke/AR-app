@@ -40,8 +40,12 @@ func readEnvelope(t *testing.T, conn *websocket.Conn) envelope {
 }
 
 func newTestServer() *httptest.Server {
+	return newTestServerAuth(nil)
+}
+
+func newTestServerAuth(auth Authorizer) *httptest.Server {
 	hub := NewHub()
-	h := NewHandler(hub, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h := NewHandler(hub, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/signaling", h.ServeWS)
 	return httptest.NewServer(mux)
@@ -122,6 +126,39 @@ func TestRelayDeliversByeOnDisconnect(t *testing.T) {
 	if env.Type != "bye" || env.From != RolePhone {
 		t.Fatalf("agent expected bye from phone, got type=%q from=%q", env.Type, env.From)
 	}
+}
+
+// TestRelayEnforcesAuthorizer rejects connections whose token fails authorization
+// and admits those that pass.
+func TestRelayEnforcesAuthorizer(t *testing.T) {
+	// Authorizer accepts only the token "good".
+	auth := func(room, role, token string) error {
+		if token != "good" {
+			return io.EOF // any non-nil error rejects
+		}
+		return nil
+	}
+	srv := newTestServerAuth(auth)
+	defer srv.Close()
+	room := uuid.NewString()
+
+	// Bad token -> 401 at upgrade.
+	resp, err := http.Get(srv.URL + "/v1/signaling?room=" + room + "&role=agent&token=bad")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bad token: expected 401, got %d", resp.StatusCode)
+	}
+
+	// Good token -> upgrades successfully.
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/signaling?room=" + room + "&role=agent&token=good"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("good token should connect: %v", err)
+	}
+	conn.Close()
 }
 
 // TestRelayRejectsBadParams ensures invalid room/role are refused at upgrade time.

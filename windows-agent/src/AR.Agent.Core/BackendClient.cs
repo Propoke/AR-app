@@ -18,6 +18,7 @@ public sealed class MintedSession
     [JsonPropertyName("connect_id")] public string ConnectId { get; set; } = "";
     [JsonPropertyName("pin")] public string Pin { get; set; } = "";
     [JsonPropertyName("room")] public string Room { get; set; } = "";
+    [JsonPropertyName("signaling_token")] public string SignalingToken { get; set; } = "";
     [JsonPropertyName("expires_at")] public DateTimeOffset ExpiresAt { get; set; }
     [JsonPropertyName("ice_servers")] public List<IceServer> IceServers { get; set; } = new();
 }

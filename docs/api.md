@@ -65,9 +65,11 @@ curl -sX POST http://localhost:8080/v1/sessions -H "Authorization: Bearer $ACCES
   "pin": "509134",
   "expires_at": "2026-06-30T12:10:00Z",
   "room": "f2a1...",
+  "signaling_token": "eyJ...",
   "ice_servers": [ { "urls": ["turn:127.0.0.1:3478?transport=udp"], "username": "...", "credential": "..." } ]
 }
 ```
+`signaling_token` authorizes the agent to join `room` on the signaling WS.
 
 ### Redeem a token (phone, public)
 The mobile app calls this with the values the user typed in. No auth — the token
@@ -82,6 +84,7 @@ curl -sX POST http://localhost:8080/v1/sessions/redeem \
 {
   "session_id": "f2a1...",
   "room": "f2a1...",
+  "signaling_token": "eyJ...",
   "ice_servers": [ { "urls": ["..."], "username": "...", "credential": "..." } ]
 }
 ```
@@ -91,12 +94,15 @@ Errors: `401` invalid/expired token, `429` too many attempts.
 ## Signaling WebSocket
 
 ```
-GET /v1/signaling?room=<session_id>&role=<agent|phone>   (Upgrade: websocket)
+GET /v1/signaling?room=<session_id>&role=<agent|phone>&token=<signaling_token>   (Upgrade: websocket)
 ```
 
-Both peers connect to the same `room` (the `session_id`). The relay forwards each
-peer's messages to the other and emits `peer-ready` once both are present. Message
-envelope and types: see `shared/signaling.schema.json` and `shared/README.md`.
+Both peers connect to the same `room` (the `session_id`), presenting the
+`signaling_token` from their mint/redeem response. The relay validates that the
+token authorizes that exact room and role, then forwards each peer's messages to
+the other and emits `peer-ready` once both are present. Message envelope and
+types: see `shared/signaling.schema.json` and `shared/README.md`.
 
-> Phase 1 uses the room id as the bearer for the room. Phase 2 will require a
-> short-lived signaling join token minted at redeem/mint time.
+> The signaling token is a short-lived (default 4h) HMAC-signed JWT bound to
+> `{room, role}`. The DB-free dev relay (`cmd/signaling-dev`) disables enforcement
+> so the interop harness can run without minting tokens.

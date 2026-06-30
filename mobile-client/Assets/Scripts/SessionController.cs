@@ -91,7 +91,7 @@ namespace ARApp
 
             _signaling = new SignalingClient(new Uri(_wsBaseUrl));
             _signaling.EnvelopeReceived += env => _mainThread.Enqueue(() => HandleEnvelope(env));
-            _ = _signaling.ConnectAsync(join.Room);
+            _ = _signaling.ConnectAsync(join.Room, join.SignalingToken);
         }
 
         private void HandleEnvelope(SignalingEnvelope env)

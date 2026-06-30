@@ -52,17 +52,30 @@ func run(logger *slog.Logger) error {
 	}
 	logger.Info("migrations applied")
 
-	issuer := auth.NewIssuer(cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
+	issuer := auth.NewIssuer(cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL, cfg.SignalingTokenTTL)
 	turnMinter := turn.NewMinter(cfg.TURNSecret, cfg.TURNURLs, cfg.TURNCredTTL)
 
 	identitySvc := identity.NewService(st.DB)
-	sessionSvc := session.NewService(st.DB, st.Redis, turnMinter, cfg.SessionTokenTTL)
+	sessionSvc := session.NewService(st.DB, st.Redis, turnMinter, issuer, cfg.SessionTokenTTL)
 	hub := signaling.NewHub()
+
+	// Enforce per-session signaling join tokens: the token must authorize the
+	// exact room and role the peer is connecting as.
+	signalingAuth := func(room, role, token string) error {
+		claims, err := issuer.ParseSignaling(token)
+		if err != nil {
+			return err
+		}
+		if claims.Room != room || claims.Role != role {
+			return errors.New("token does not match room/role")
+		}
+		return nil
+	}
 
 	handler := httpapi.New(httpapi.Deps{
 		Identity:  identity.NewHandlers(identitySvc, issuer),
 		Session:   session.NewHandlers(sessionSvc),
-		Signaling: signaling.NewHandler(hub, logger),
+		Signaling: signaling.NewHandler(hub, logger, signalingAuth),
 		Issuer:    issuer,
 		Logger:    logger,
 	})
