@@ -111,10 +111,14 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	h.hub.Join(room, peer)
 	h.log.Info("peer joined", "room", room, "role", role, "peer", peer.id)
 
-	// Tell the newcomer whether its counterpart is already present, so the agent
-	// knows when to send its WebRTC offer.
-	if _, ok := h.hub.Counterpart(room, peer); ok {
-		peer.Send(mustMarshal(envelope{Type: "peer-ready"}))
+	// When both peers are present, notify BOTH so whichever side is the agent
+	// (the offerer) sends its WebRTC offer — regardless of join order. The agent
+	// normally connects first (it mints, the phone redeems later), so notifying
+	// only the newcomer would leave the agent waiting forever.
+	readyFrame := mustMarshal(envelope{Type: "peer-ready"})
+	if cp, ok := h.hub.Counterpart(room, peer); ok {
+		peer.Send(readyFrame)
+		cp.Send(readyFrame)
 	}
 
 	go h.writePump(peer)

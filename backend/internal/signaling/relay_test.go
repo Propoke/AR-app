@@ -67,9 +67,12 @@ func TestRelayForwardsBetweenPeers(t *testing.T) {
 	phone := dialPeer(t, srv, room, "phone")
 	defer phone.Close()
 
-	// The phone joined second, so it learns its counterpart is ready.
+	// Both peers learn the room is ready; drain those frames first.
 	if env := readEnvelope(t, phone); env.Type != "peer-ready" {
 		t.Fatalf("phone expected peer-ready, got %q", env.Type)
+	}
+	if env := readEnvelope(t, agent); env.Type != "peer-ready" {
+		t.Fatalf("agent expected peer-ready, got %q", env.Type)
 	}
 
 	// Agent sends an offer; phone should receive it stamped from=agent.
@@ -106,6 +109,28 @@ func TestRelayForwardsBetweenPeers(t *testing.T) {
 	}
 }
 
+// TestAgentJoiningFirstGetsPeerReady guards the real-world ordering: the agent
+// connects first (it mints; the phone redeems later). When the phone joins, the
+// agent — already waiting — must receive peer-ready so it sends its offer.
+func TestAgentJoiningFirstGetsPeerReady(t *testing.T) {
+	srv := newTestServer()
+	defer srv.Close()
+	room := uuid.NewString()
+
+	agent := dialPeer(t, srv, room, "agent") // joins first
+	defer agent.Close()
+	phone := dialPeer(t, srv, room, "phone") // joins second
+	defer phone.Close()
+
+	// Both sides should now receive peer-ready.
+	if env := readEnvelope(t, agent); env.Type != "peer-ready" {
+		t.Fatalf("agent (joined first) expected peer-ready, got %q", env.Type)
+	}
+	if env := readEnvelope(t, phone); env.Type != "peer-ready" {
+		t.Fatalf("phone (joined second) expected peer-ready, got %q", env.Type)
+	}
+}
+
 // TestRelayDeliversByeOnDisconnect verifies the surviving peer is told when its
 // counterpart drops.
 func TestRelayDeliversByeOnDisconnect(t *testing.T) {
@@ -117,8 +142,9 @@ func TestRelayDeliversByeOnDisconnect(t *testing.T) {
 	defer agent.Close()
 	phone := dialPeer(t, srv, room, "phone")
 
-	// Drain the peer-ready the phone receives.
+	// Drain the peer-ready both peers receive.
 	_ = readEnvelope(t, phone)
+	_ = readEnvelope(t, agent)
 
 	// Phone leaves; agent should receive a bye stamped from=phone.
 	phone.Close()
