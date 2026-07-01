@@ -31,8 +31,10 @@
   - `ar_http_requests_total{route,status}` — traffic and error rates.
   - `ar_http_request_duration_seconds` — latency histogram.
   - `ar_signaling_rooms` — active sessions (sampled every 15s).
-- Point Prometheus at `/metrics`; build Grafana panels for error rate, p95 latency,
-  and active rooms. Alert on readiness failures and elevated 5xx.
+- `docker-compose.prod.yml` includes **Prometheus + Grafana** (auto-provisioned
+  datasource + an "AR App Overview" dashboard: active rooms, request rate, p95
+  latency, 5xx). Grafana is on `:3000` (keep it tunnel/LAN-only). Add alerts on
+  readiness failures and elevated 5xx.
 
 ## Common incidents
 | Symptom | Likely cause | Action |

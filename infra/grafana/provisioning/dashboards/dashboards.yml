@@ -1,0 +1,13 @@
+# Loads dashboard JSON files mounted at /etc/dashboards.
+apiVersion: 1
+providers:
+  - name: AR App
+    orgId: 1
+    folder: "AR App"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/dashboards
+      foldersFromFilesStructure: false
