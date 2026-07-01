@@ -24,6 +24,9 @@ type Claims struct {
 	OrgID string    `json:"org"`
 	Role  string    `json:"role"`
 	Kind  TokenKind `json:"knd"`
+	// Ver is the user's token version at issue time; a mismatch on refresh means
+	// the token has been revoked.
+	Ver int `json:"ver"`
 	jwt.RegisteredClaims
 }
 
@@ -91,8 +94,8 @@ func (i *Issuer) ParseSignaling(raw string) (*SignalingClaims, error) {
 	return claims, nil
 }
 
-// Issue creates a signed token for the given user.
-func (i *Issuer) Issue(kind TokenKind, userID, orgID uuid.UUID, role string) (string, time.Time, error) {
+// Issue creates a signed token for the given user at the given token version.
+func (i *Issuer) Issue(kind TokenKind, userID, orgID uuid.UUID, role string, tokenVersion int) (string, time.Time, error) {
 	ttl := i.accessTTL
 	if kind == KindRefresh {
 		ttl = i.refreshTTL
@@ -103,6 +106,7 @@ func (i *Issuer) Issue(kind TokenKind, userID, orgID uuid.UUID, role string) (st
 		OrgID: orgID.String(),
 		Role:  role,
 		Kind:  kind,
+		Ver:   tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			IssuedAt:  jwt.NewNumericDate(now),

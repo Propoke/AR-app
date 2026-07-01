@@ -117,7 +117,27 @@ func (h *Handlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusUnauthorized, "user no longer exists")
 		return
 	}
+	// Reject refresh tokens whose version is stale (revoked via logout/disable).
+	if claims.Ver != u.TokenVersion {
+		httputil.WriteError(w, http.StatusUnauthorized, "token revoked")
+		return
+	}
 	h.respondWithTokens(w, http.StatusOK, u)
+}
+
+// Logout revokes the caller's outstanding refresh tokens by bumping their token
+// version. Access tokens remain valid until they expire (short-lived).
+func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
+	p, ok := auth.FromContext(r.Context())
+	if !ok {
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	if err := h.svc.BumpTokenVersion(r.Context(), p.OrgID, p.UserID); err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "could not log out")
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
 
 // Me returns the authenticated user's profile.
@@ -136,12 +156,12 @@ func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) respondWithTokens(w http.ResponseWriter, status int, u User) {
-	access, exp, err := h.issuer.Issue(auth.KindAccess, u.ID, u.OrgID, u.Role)
+	access, exp, err := h.issuer.Issue(auth.KindAccess, u.ID, u.OrgID, u.Role, u.TokenVersion)
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, "could not issue token")
 		return
 	}
-	refresh, _, err := h.issuer.Issue(auth.KindRefresh, u.ID, u.OrgID, u.Role)
+	refresh, _, err := h.issuer.Issue(auth.KindRefresh, u.ID, u.OrgID, u.Role, u.TokenVersion)
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, "could not issue token")
 		return

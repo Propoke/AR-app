@@ -54,6 +54,27 @@ curl -sX POST http://localhost:8080/v1/auth/refresh \
 curl -s http://localhost:8080/v1/me -H "Authorization: Bearer $ACCESS"
 ```
 
+### Logout (revoke refresh tokens)
+Bumps the caller's token version, invalidating outstanding refresh tokens. Access
+tokens remain valid until they expire.
+```bash
+curl -sX POST http://localhost:8080/v1/auth/logout -H "Authorization: Bearer $ACCESS"
+```
+
+## User management (admin only)
+
+All require an admin Bearer token.
+
+| Method & path | Purpose |
+|---------------|---------|
+| `POST /v1/users` | Create a user in the admin's org (`email`, `password`, `display_name`, `role`) |
+| `GET /v1/users` | List users in the org |
+| `POST /v1/users/{id}/disable` | Disable a user (also revokes their refresh tokens) |
+| `POST /v1/users/{id}/enable` | Re-enable a user |
+
+`role` is one of `admin`, `agent`, `viewer`. Non-admins get `403`; disabled users
+get `403` on login.
+
 ## Sessions / connection tokens
 
 ### Mint a token (agent, authenticated)

@@ -32,6 +32,8 @@ type User struct {
 	DisplayName string    `json:"display_name"`
 	Role        string    `json:"role"`
 	CreatedAt   time.Time `json:"created_at"`
+	// TokenVersion is used for refresh-token revocation; not serialized to clients.
+	TokenVersion int `json:"-"`
 }
 
 // Service provides identity operations backed by Postgres.
@@ -64,9 +66,9 @@ func (s *Service) RegisterOrg(ctx context.Context, orgName, email, password, dis
 		return tx.QueryRow(ctx,
 			`INSERT INTO users (org_id, email, password_hash, display_name, role)
 			 VALUES ($1, $2, $3, $4, 'admin')
-			 RETURNING id, org_id, email, display_name, role, created_at`,
+			 RETURNING id, org_id, email, display_name, role, created_at, token_version`,
 			orgID, email, hash, displayName,
-		).Scan(&u.ID, &u.OrgID, &u.Email, &u.DisplayName, &u.Role, &u.CreatedAt)
+		).Scan(&u.ID, &u.OrgID, &u.Email, &u.DisplayName, &u.Role, &u.CreatedAt, &u.TokenVersion)
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -114,11 +116,11 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (Use
 		disabled bool
 	)
 	err := s.db.QueryRow(ctx,
-		`SELECT id, org_id, email, password_hash, display_name, role, disabled, created_at
+		`SELECT id, org_id, email, password_hash, display_name, role, disabled, created_at, token_version
 		 FROM users WHERE lower(email) = $1
 		 ORDER BY created_at LIMIT 1`,
 		email,
-	).Scan(&u.ID, &u.OrgID, &u.Email, &hash, &u.DisplayName, &u.Role, &disabled, &u.CreatedAt)
+	).Scan(&u.ID, &u.OrgID, &u.Email, &hash, &u.DisplayName, &u.Role, &disabled, &u.CreatedAt, &u.TokenVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Compare against a dummy hash to equalize timing, then fail.
 		_ = crypto.VerifyPassword(password, dummyHash)
@@ -136,15 +138,66 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (Use
 	return u, nil
 }
 
+// ListUsers returns all users in an organization, newest first.
+func (s *Service) ListUsers(ctx context.Context, orgID uuid.UUID) ([]User, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT id, org_id, email, display_name, role, created_at
+		 FROM users WHERE org_id = $1 ORDER BY created_at DESC`,
+		orgID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.OrgID, &u.Email, &u.DisplayName, &u.Role, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// SetDisabled enables or disables a user within an organization. Disabling also
+// bumps the user's token version, revoking their outstanding refresh tokens.
+func (s *Service) SetDisabled(ctx context.Context, orgID, userID uuid.UUID, disabled bool) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE users SET disabled = $1,
+		    token_version = token_version + CASE WHEN $1 THEN 1 ELSE 0 END
+		 WHERE id = $2 AND org_id = $3`,
+		disabled, userID, orgID,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("user not found")
+	}
+	return nil
+}
+
 // GetUser returns a user by id, scoped to an organization.
 func (s *Service) GetUser(ctx context.Context, orgID, userID uuid.UUID) (User, error) {
 	var u User
 	err := s.db.QueryRow(ctx,
-		`SELECT id, org_id, email, display_name, role, created_at
+		`SELECT id, org_id, email, display_name, role, created_at, token_version
 		 FROM users WHERE id = $1 AND org_id = $2`,
 		userID, orgID,
-	).Scan(&u.ID, &u.OrgID, &u.Email, &u.DisplayName, &u.Role, &u.CreatedAt)
+	).Scan(&u.ID, &u.OrgID, &u.Email, &u.DisplayName, &u.Role, &u.CreatedAt, &u.TokenVersion)
 	return u, err
+}
+
+// BumpTokenVersion increments a user's token version, revoking their outstanding
+// refresh tokens (used on logout).
+func (s *Service) BumpTokenVersion(ctx context.Context, orgID, userID uuid.UUID) error {
+	_, err := s.db.Exec(ctx,
+		`UPDATE users SET token_version = token_version + 1 WHERE id = $1 AND org_id = $2`,
+		userID, orgID,
+	)
+	return err
 }
 
 func normalizeEmail(email string) string {

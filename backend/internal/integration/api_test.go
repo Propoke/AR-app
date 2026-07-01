@@ -101,6 +101,93 @@ func postJSON(t *testing.T, url, token string, body any) (*http.Response, map[st
 	return resp, out
 }
 
+func getJSON(t *testing.T, url, token string) (*http.Response, map[string]any) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	resp.Body.Close()
+	return resp, out
+}
+
+// TestUserManagementAndRevocation covers admin user CRUD, logout-based refresh
+// revocation, and account disable.
+func TestUserManagementAndRevocation(t *testing.T) {
+	srv := newServer(t)
+	stamp := time.Now().Format("150405.000000")
+
+	// Register an admin.
+	adminEmail := "admin-" + stamp + "@example.com"
+	_, reg := postJSON(t, srv.URL+"/v1/auth/register", "", map[string]string{
+		"org_name": "Acme", "email": adminEmail, "password": "hunter2hunter2", "display_name": "Admin",
+	})
+	adminToken, _ := reg["access_token"].(string)
+
+	// Admin creates an agent.
+	agentEmail := "agent-" + stamp + "@example.com"
+	resp, created := postJSON(t, srv.URL+"/v1/users", adminToken, map[string]string{
+		"email": agentEmail, "password": "hunter2hunter2", "display_name": "Agent", "role": "agent",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create user: want 201, got %d", resp.StatusCode)
+	}
+	agentID, _ := created["id"].(string)
+
+	// Admin lists users -> at least the two.
+	resp, list := getJSON(t, srv.URL+"/v1/users", adminToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list users: want 200, got %d", resp.StatusCode)
+	}
+	if users, _ := list["users"].([]any); len(users) < 2 {
+		t.Fatalf("expected >=2 users, got %d", len(users))
+	}
+
+	// The new agent logs in, then logs out; its refresh token must be revoked.
+	_, agentTokens := postJSON(t, srv.URL+"/v1/auth/login", "", map[string]string{
+		"email": agentEmail, "password": "hunter2hunter2",
+	})
+	agentAccess, _ := agentTokens["access_token"].(string)
+	agentRefresh, _ := agentTokens["refresh_token"].(string)
+
+	if resp, _ := postJSON(t, srv.URL+"/v1/auth/logout", agentAccess, nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("logout: want 200, got %d", resp.StatusCode)
+	}
+	resp, _ = postJSON(t, srv.URL+"/v1/auth/refresh", "", map[string]string{"refresh_token": agentRefresh})
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("refresh after logout: want 401 (revoked), got %d", resp.StatusCode)
+	}
+
+	// A non-admin cannot create users.
+	_, agentTokens2 := postJSON(t, srv.URL+"/v1/auth/login", "", map[string]string{
+		"email": agentEmail, "password": "hunter2hunter2",
+	})
+	agentAccess2, _ := agentTokens2["access_token"].(string)
+	resp, _ = postJSON(t, srv.URL+"/v1/users", agentAccess2, map[string]string{
+		"email": "x" + stamp + "@example.com", "password": "hunter2hunter2",
+	})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-admin create user: want 403, got %d", resp.StatusCode)
+	}
+
+	// Admin disables the agent; the agent can no longer log in.
+	if resp, _ := postJSON(t, srv.URL+"/v1/users/"+agentID+"/disable", adminToken, nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("disable user: want 200, got %d", resp.StatusCode)
+	}
+	resp, _ = postJSON(t, srv.URL+"/v1/auth/login", "", map[string]string{
+		"email": agentEmail, "password": "hunter2hunter2",
+	})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("login after disable: want 403, got %d", resp.StatusCode)
+	}
+}
+
 // TestFullSessionFlow covers the DB-backed path end to end: register an org, mint
 // a connection token, redeem it, and confirm both peers can join signaling with
 // their tokens.

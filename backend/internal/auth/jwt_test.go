@@ -34,7 +34,7 @@ func TestSignalingTokenRoundTrip(t *testing.T) {
 func TestParseSignalingRejectsAccessToken(t *testing.T) {
 	i := newTestIssuer()
 	// An access token must not be accepted as a signaling token.
-	access, _, err := i.Issue(KindAccess, uuid.New(), uuid.New(), "agent")
+	access, _, err := i.Issue(KindAccess, uuid.New(), uuid.New(), "agent", 0)
 	if err != nil {
 		t.Fatalf("issue access: %v", err)
 	}

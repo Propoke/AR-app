@@ -67,7 +67,14 @@ func New(d Deps) http.Handler {
 		return d.Issuer.Middleware(http.HandlerFunc(h))
 	}
 	mux.Handle("GET /v1/me", authed(d.Identity.Me))
+	mux.Handle("POST /v1/auth/logout", authed(d.Identity.Logout))
 	mux.Handle("POST /v1/sessions", authed(d.Session.Mint))
+
+	// Admin user management (the handlers enforce the admin role).
+	mux.Handle("GET /v1/users", authed(d.Identity.ListUsers))
+	mux.Handle("POST /v1/users", authed(d.Identity.CreateUser))
+	mux.Handle("POST /v1/users/{id}/disable", authed(d.Identity.SetUserDisabled(true)))
+	mux.Handle("POST /v1/users/{id}/enable", authed(d.Identity.SetUserDisabled(false)))
 
 	// Session recordings (optional; only when object storage is configured).
 	if d.Recordings != nil {
