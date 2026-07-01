@@ -54,6 +54,17 @@ function newPeer() {
   });
 }
 
+// waitIceComplete resolves once the peer has gathered all ICE candidates, so the
+// local description carries them (non-trickle signaling).
+function waitIceComplete(pc) {
+  return new Promise((resolve) => {
+    if (pc.iceGatheringState === "complete") return resolve();
+    pc.iceGatheringStateChange.subscribe(() => {
+      if (pc.iceGatheringState === "complete") resolve();
+    });
+  });
+}
+
 // waitFor resolves when predicate() is true, polling until the deadline.
 function waitFor(label, predicate) {
   return new Promise((resolve, reject) => {
@@ -103,37 +114,29 @@ async function main() {
   });
 
   // --- signaling wiring ---
+  // Non-trickle ICE: after setLocalDescription we wait for gathering to complete
+  // and send the full SDP (candidates embedded). This avoids per-candidate
+  // serialization, whose object shape varies across werift builds.
   const agentSig = new SignalingClient(SIGNALING_URL, room, "agent");
   const phoneSig = new SignalingClient(SIGNALING_URL, room, "phone");
 
-  agentPc.onIceCandidate.subscribe(({ candidate }) => {
-    if (candidate) agentSig.send("ice", candidate.toJSON());
-  });
-  phonePc.onIceCandidate.subscribe(({ candidate }) => {
-    if (candidate) phoneSig.send("ice", candidate.toJSON());
-  });
-
   agentSig.on("answer", async (env) => {
     await agentPc.setRemoteDescription(env.payload);
-  });
-  agentSig.on("ice", async (env) => {
-    await agentPc.addIceCandidate(env.payload);
   });
 
   phoneSig.on("offer", async (env) => {
     await phonePc.setRemoteDescription(env.payload);
     const answer = await phonePc.createAnswer();
     await phonePc.setLocalDescription(answer);
+    await waitIceComplete(phonePc);
     phoneSig.send("answer", phonePc.localDescription);
-  });
-  phoneSig.on("ice", async (env) => {
-    await phonePc.addIceCandidate(env.payload);
   });
 
   // The agent sends its offer once the relay reports the phone is present.
   agentSig.on("peer-ready", async () => {
     const offer = await agentPc.createOffer();
     await agentPc.setLocalDescription(offer);
+    await waitIceComplete(agentPc);
     agentSig.send("offer", agentPc.localDescription);
   });
 

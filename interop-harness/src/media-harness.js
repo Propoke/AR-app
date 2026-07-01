@@ -46,6 +46,16 @@ function waitFor(label, predicate) {
   });
 }
 
+// waitIceComplete resolves once ICE gathering finishes (non-trickle signaling).
+function waitIceComplete(pc) {
+  return new Promise((resolve) => {
+    if (pc.iceGatheringState === "complete") return resolve();
+    pc.iceGatheringStateChange.subscribe(() => {
+      if (pc.iceGatheringState === "complete") resolve();
+    });
+  });
+}
+
 // Builds a minimal but valid RTP packet with a 100-byte dummy payload.
 function rtpPacket(payloadType, seq, timestamp, ssrc) {
   const header = new RtpHeader({
@@ -91,23 +101,21 @@ async function main() {
     });
   });
 
-  // Signaling (agent offers once the phone is present).
+  // Signaling with non-trickle ICE (full SDP after gathering completes).
   const agentSig = new SignalingClient(SIGNALING_URL, room, "agent");
   const phoneSig = new SignalingClient(SIGNALING_URL, room, "phone");
-  agentPc.onIceCandidate.subscribe(({ candidate }) => candidate && agentSig.send("ice", candidate.toJSON()));
-  phonePc.onIceCandidate.subscribe(({ candidate }) => candidate && phoneSig.send("ice", candidate.toJSON()));
   agentSig.on("answer", (env) => agentPc.setRemoteDescription(env.payload));
-  agentSig.on("ice", (env) => agentPc.addIceCandidate(env.payload));
   phoneSig.on("offer", async (env) => {
     await phonePc.setRemoteDescription(env.payload);
     const answer = await phonePc.createAnswer();
     await phonePc.setLocalDescription(answer);
+    await waitIceComplete(phonePc);
     phoneSig.send("answer", phonePc.localDescription);
   });
-  phoneSig.on("ice", (env) => phonePc.addIceCandidate(env.payload));
   agentSig.on("peer-ready", async () => {
     const offer = await agentPc.createOffer();
     await agentPc.setLocalDescription(offer);
+    await waitIceComplete(agentPc);
     agentSig.send("offer", agentPc.localDescription);
   });
 

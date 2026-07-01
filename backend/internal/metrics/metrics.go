@@ -2,6 +2,9 @@
 package metrics
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -66,4 +69,14 @@ func (s *statusRecorder) WriteHeader(code int) {
 		s.wroteHeader = true
 	}
 	s.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack lets WebSocket upgrades (e.g. /v1/signaling) take over the connection
+// through this instrumentation wrapper.
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := s.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("underlying ResponseWriter does not support hijacking")
+	}
+	return hj.Hijack()
 }
