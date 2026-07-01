@@ -21,8 +21,31 @@ namespace ARApp
     public sealed class SessionController : MonoBehaviour
     {
         [Header("Backend")]
+        [Tooltip("Backend base URL, e.g. https://support.example.com. The signaling " +
+                 "WebSocket URL is derived from it (http->ws, https->wss).")]
         [SerializeField] private string _httpBaseUrl = "http://localhost:8080";
-        [SerializeField] private string _wsBaseUrl = "ws://localhost:8080";
+        [Tooltip("Optional explicit WebSocket base; leave empty to derive from the HTTP URL.")]
+        [SerializeField] private string _wsBaseUrl = "";
+
+        /// <summary>Sets the backend URL at runtime (e.g. from a settings screen).</summary>
+        public void SetServerUrl(string httpBaseUrl)
+        {
+            if (!string.IsNullOrWhiteSpace(httpBaseUrl))
+                _httpBaseUrl = httpBaseUrl.Trim();
+        }
+
+        // Derives the signaling WebSocket base from the HTTP base unless an explicit
+        // override is provided (http -> ws, https -> wss).
+        private string WsBaseUrl()
+        {
+            if (!string.IsNullOrWhiteSpace(_wsBaseUrl))
+                return _wsBaseUrl;
+            if (_httpBaseUrl.StartsWith("https://"))
+                return "wss://" + _httpBaseUrl.Substring("https://".Length);
+            if (_httpBaseUrl.StartsWith("http://"))
+                return "ws://" + _httpBaseUrl.Substring("http://".Length);
+            return _httpBaseUrl;
+        }
 
         [Header("Scene wiring")]
         [SerializeField] private ARApp.AR.ARCameraStreamer _cameraStreamer;
@@ -89,7 +112,7 @@ namespace ARApp
                     AnchorId = anchorId,
                 });
 
-            _signaling = new SignalingClient(new Uri(_wsBaseUrl));
+            _signaling = new SignalingClient(new Uri(WsBaseUrl()));
             _signaling.EnvelopeReceived += env => _mainThread.Enqueue(() => HandleEnvelope(env));
             _ = _signaling.ConnectAsync(join.Room, join.SignalingToken);
         }

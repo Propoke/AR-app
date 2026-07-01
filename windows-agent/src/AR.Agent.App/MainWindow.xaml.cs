@@ -16,13 +16,10 @@ namespace AR.Agent.App;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
-    // For local development. In production these come from app configuration.
-    private static readonly Uri BackendBaseUrl = new("http://localhost:8080");
-    private static readonly Uri SignalingBaseUrl = new("ws://localhost:8080");
-
-    private readonly BackendClient _backend = new(BackendBaseUrl);
     private readonly DispatcherQueue _dispatcher;
 
+    private BackendClient? _backend;
+    private Uri _wsBase = ServerConfig.WebSocketBase(ServerConfig.ResolveHttpBase());
     private SignalingClient? _signaling;
     private SessionConnection? _session;
 
@@ -30,12 +27,19 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         _dispatcher = DispatcherQueue.GetForCurrentThread();
+        // Prefill the server field from the env var / default.
+        ServerBox.Text = ServerConfig.ResolveHttpBase().ToString();
     }
 
     private async void OnLoginClick(object sender, RoutedEventArgs e)
     {
         try
         {
+            // Resolve the backend from the server field; derive the signaling URL.
+            var httpBase = ServerConfig.ResolveHttpBase(ServerBox.Text);
+            _wsBase = ServerConfig.WebSocketBase(httpBase);
+            _backend = new BackendClient(httpBase);
+
             SetStatus("Signing in…");
             await _backend.LoginAsync(EmailBox.Text, PasswordBox.Password);
             StartButton.IsEnabled = true;
@@ -51,6 +55,11 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            if (_backend is null)
+            {
+                SetStatus("Sign in first.");
+                return;
+            }
             StartButton.IsEnabled = false;
             SetStatus("Creating session…");
 
@@ -59,7 +68,7 @@ public sealed partial class MainWindow : Window
             PinText.Text = $"PIN {minted.Pin}";
             SetStatus("Waiting for the end-user to enter the code on their phone…");
 
-            _signaling = new SignalingClient(SignalingBaseUrl);
+            _signaling = new SignalingClient(_wsBase);
             _signaling.EnvelopeReceived += OnEnvelope;
             await _signaling.ConnectAsync(minted.Room, minted.SignalingToken);
             _ = Task.Run(() => _signaling.ReceiveLoopAsync());
