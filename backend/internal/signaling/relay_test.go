@@ -187,6 +187,76 @@ func TestRelayEnforcesAuthorizer(t *testing.T) {
 	conn.Close()
 }
 
+// TestSignalingTokenViaHeader confirms the token can be supplied via the
+// X-Signaling-Token header instead of the query string — the preferred path,
+// since headers are less likely to be captured in proxy/access logs than a
+// full request URL.
+func TestSignalingTokenViaHeader(t *testing.T) {
+	auth := func(room, role, token string) error {
+		if token != "good" {
+			return io.EOF
+		}
+		return nil
+	}
+	srv := newTestServerAuth(auth)
+	defer srv.Close()
+	room := uuid.NewString()
+
+	// No token in the query string at all; it arrives only via the header.
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/signaling?room=" + room + "&role=agent"
+	header := http.Header{"X-Signaling-Token": {"good"}}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		t.Fatalf("token via header should connect: %v", err)
+	}
+	conn.Close()
+
+	// A bad token via the header must still be rejected.
+	header = http.Header{"X-Signaling-Token": {"bad"}}
+	resp, err := (&http.Client{}).Do(mustNewRequest(t, "GET", srv.URL+"/v1/signaling?room="+room+"&role=agent", header))
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bad token via header: expected 401, got %d", resp.StatusCode)
+	}
+}
+
+// TestSignalingTokenHeaderPreferredOverQuery confirms that when both the
+// header and the query string carry a token, the header wins (a client
+// migrating to the header shouldn't be silently undermined by a stale query
+// value some intermediary might still be appending).
+func TestSignalingTokenHeaderPreferredOverQuery(t *testing.T) {
+	auth := func(room, role, token string) error {
+		if token != "good" {
+			return io.EOF
+		}
+		return nil
+	}
+	srv := newTestServerAuth(auth)
+	defer srv.Close()
+	room := uuid.NewString()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/signaling?room=" + room + "&role=agent&token=bad"
+	header := http.Header{"X-Signaling-Token": {"good"}}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		t.Fatalf("header token should win over a bad query token: %v", err)
+	}
+	conn.Close()
+}
+
+func mustNewRequest(t *testing.T, method, url string, header http.Header) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header = header
+	return req
+}
+
 // TestRelayRejectsBadParams ensures invalid room/role are refused at upgrade time.
 func TestRelayRejectsBadParams(t *testing.T) {
 	srv := newTestServer()

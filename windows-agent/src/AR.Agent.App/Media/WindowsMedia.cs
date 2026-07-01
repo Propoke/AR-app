@@ -44,17 +44,25 @@ public sealed class WindowsAudioDevice : IMicrophone, ISpeaker
         _ = _endpoint.CloseAudioSink();
     }
 
-    public void PlayEncoded(byte[] opusPayload)
+    public void PlayEncoded(int payloadType, byte[] opusPayload)
     {
-        // Feed the sink's jitter buffer. Sequence/SSRC are not significant for a
-        // single inbound stream; the timestamp advances by a 20 ms Opus frame.
+        // Feed the sink's jitter buffer with the RTP packet's ACTUAL negotiated
+        // payload type (passed through from SessionConnection's received RTP
+        // header), not a hardcoded guess. An earlier version of this method
+        // hardcoded SDPWellKnownMediaFormatsEnum.PCMU here with a comment
+        // claiming it would be "overridden by negotiated Opus format" — there
+        // is no such override mechanism in this API; that would have told the
+        // sink to decode Opus-encoded bytes as PCMU (an unrelated, incompatible
+        // codec), producing silence or garbage/noise instead of audio.
+        // Sequence/SSRC are not significant for a single inbound stream; the
+        // timestamp advances by a 20 ms Opus frame.
         _sinkTimestamp += 960;
         _endpoint.GotAudioRtp(
             remoteEndPoint: null,
             ssrc: 0,
             seqnum: 0,
             timestamp: _sinkTimestamp,
-            payloadID: (int)SDPWellKnownMediaFormatsEnum.PCMU, // overridden by negotiated Opus format
+            payloadID: payloadType,
             marker: false,
             payload: opusPayload);
     }

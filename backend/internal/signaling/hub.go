@@ -41,10 +41,11 @@ type Peer interface {
 // Hub manages local peers and routes frames through a Fanout, using Presence to
 // know when both sides of a room are connected.
 type Hub struct {
-	mu       sync.RWMutex
-	rooms    map[string]map[Role]Peer // local peers only
-	fanout   Fanout
-	presence Presence
+	mu          sync.RWMutex
+	rooms       map[string]map[Role]Peer // local peers only
+	fanout      Fanout
+	presence    Presence
+	onRoomEnded func(room string)
 }
 
 // NewHub constructs a single-process Hub (local fanout + presence).
@@ -86,7 +87,9 @@ func (h *Hub) Join(room string, p Peer) {
 }
 
 // Leave removes a peer (if it is still the current occupant of its role) and
-// updates presence.
+// updates presence. If this was the room's last occupant across all instances
+// (per Presence, which is authoritative even under the Redis fanout), the
+// OnRoomEnded callback fires — this is the "session has ended" signal.
 func (h *Hub) Leave(room string, p Peer) {
 	h.mu.Lock()
 	if peers := h.rooms[room]; peers != nil {
@@ -97,9 +100,23 @@ func (h *Hub) Leave(room string, p Peer) {
 			delete(h.rooms, room)
 		}
 	}
+	onEnded := h.onRoomEnded
 	h.mu.Unlock()
 
-	h.presence.Leave(room, p.Role())
+	empty := h.presence.Leave(room, p.Role())
+	if empty && onEnded != nil {
+		onEnded(room)
+	}
+}
+
+// OnRoomEnded registers a callback fired once, when a room's last occupant
+// leaves (see Leave). Optional; used to mark a session ended in the database.
+// Safe to call at any time; takes effect for leaves that happen after it
+// returns.
+func (h *Hub) OnRoomEnded(fn func(room string)) {
+	h.mu.Lock()
+	h.onRoomEnded = fn
+	h.mu.Unlock()
 }
 
 // Relay forwards a frame from sender to the opposite peer in the room, wherever

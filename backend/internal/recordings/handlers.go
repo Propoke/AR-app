@@ -31,6 +31,10 @@ func (h *Handlers) CreateUpload(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
+	if p.Role == "viewer" {
+		httputil.WriteError(w, http.StatusForbidden, "viewers cannot create recordings")
+		return
+	}
 	sessionID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "invalid session id")
@@ -57,6 +61,10 @@ func (h *Handlers) Complete(w http.ResponseWriter, r *http.Request) {
 	p, ok := auth.FromContext(r.Context())
 	if !ok {
 		httputil.WriteError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	if p.Role == "viewer" {
+		httputil.WriteError(w, http.StatusForbidden, "viewers cannot complete recordings")
 		return
 	}
 	recordingID, err := uuid.Parse(r.PathValue("id"))

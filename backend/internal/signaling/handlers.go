@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,24 +28,51 @@ var upgrader = websocket.Upgrader{
 }
 
 // wsPeer is a WebSocket-backed Peer.
+//
+// closed guards against sending on the "send" channel after it has been closed:
+// the hub can hold a reference to a peer (via deliverLocal) concurrently with
+// readPump tearing that same peer down, so Send() and the channel close below
+// must never race — a send on a closed channel panics and would take down the
+// whole process (every other active session with it).
 type wsPeer struct {
 	id   string
 	role Role
 	conn *websocket.Conn
-	send chan []byte
+
+	mu     sync.Mutex
+	send   chan []byte
+	closed bool
 }
 
 func (p *wsPeer) ID() string { return p.id }
 func (p *wsPeer) Role() Role { return p.role }
 
-// Send queues a frame, dropping it if the peer's buffer is full (slow consumer).
+// Send queues a frame, dropping it if the peer's buffer is full (slow consumer)
+// or if the peer has already disconnected.
 func (p *wsPeer) Send(frame []byte) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return false
+	}
 	select {
 	case p.send <- frame:
 		return true
 	default:
 		return false
 	}
+}
+
+// closeSend marks the peer closed and closes the send channel exactly once,
+// under the same lock Send uses, so no send can race the close.
+func (p *wsPeer) closeSend() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return
+	}
+	p.closed = true
+	close(p.send)
 }
 
 // envelope is the signaling message wire format. Type is one of:
@@ -73,10 +101,18 @@ func NewHandler(hub *Hub, log *slog.Logger, auth Authorizer) *Handler {
 	return &Handler{hub: hub, log: log, auth: auth}
 }
 
-// ServeWS handles GET /v1/signaling?room=<id>&role=<agent|phone>.
-//
-// NOTE (Phase 1): the room id (a session UUID) acts as the bearer for the room.
-// Phase 2 will require a short-lived signaling join token minted at redeem time.
+// signalingTokenHeader carries the per-session signaling join token as an
+// alternative to the "token" query parameter. Headers are less likely than
+// full request URLs (including their query strings) to end up captured in
+// reverse-proxy or load-balancer access logs, so clients that can set a custom
+// header before the WebSocket handshake (all of ours can) should prefer it.
+const signalingTokenHeader = "X-Signaling-Token"
+
+// ServeWS handles GET /v1/signaling?room=<id>&role=<agent|phone>, authorized by
+// a per-session signaling token supplied either via the X-Signaling-Token
+// header (preferred) or the "token" query parameter (kept for backward
+// compatibility and for any client/tool that can't set a custom header before
+// the handshake).
 func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	room := r.URL.Query().Get("room")
 	if _, err := uuid.Parse(room); err != nil {
@@ -89,9 +125,14 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token := r.Header.Get(signalingTokenHeader)
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+
 	// Authorize with the per-session signaling token, if enforcement is enabled.
 	if h.auth != nil {
-		if err := h.auth(room, string(role), r.URL.Query().Get("token")); err != nil {
+		if err := h.auth(room, string(role), token); err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -120,7 +161,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) readPump(room string, peer *wsPeer) {
 	defer func() {
 		h.hub.Leave(room, peer)
-		close(peer.send)
+		peer.closeSend()
 		_ = peer.conn.Close()
 		// Notify the other side that this peer is gone.
 		h.hub.Relay(room, peer, mustMarshal(envelope{Type: "bye", From: peer.role}))

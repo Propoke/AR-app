@@ -110,8 +110,10 @@ public sealed class SessionConnection : IAsyncDisposable
 
     private void OnRtpPacket(IPEndPoint _, SDPMediaTypesEnum mediaType, RTPPacket packet)
     {
+        // Pass the RTP header's actual negotiated payload type through, not a
+        // hardcoded guess — the sink needs it to pick the correct decoder.
         if (mediaType == SDPMediaTypesEnum.audio)
-            _speaker?.PlayEncoded(packet.Payload);
+            _speaker?.PlayEncoded(packet.Header.PayloadType, packet.Payload);
     }
 
     /// <summary>

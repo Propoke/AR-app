@@ -48,14 +48,37 @@ func Handler() http.Handler { return promhttp.Handler() }
 // Middleware records request count and latency. The route label should be a
 // low-cardinality template (the registered pattern), not the raw path.
 func Middleware(route string, next http.HandlerFunc) http.HandlerFunc {
+	return MiddlewareDynamic(func(*http.Request) string { return route }, next)
+}
+
+// MiddlewareDynamic is like Middleware, but resolves the route label by
+// calling routeFn *after* next has served the request. This is needed when the
+// label depends on state set during routing — e.g. an http.ServeMux populates
+// r.Pattern (the matched, low-cardinality route template such as
+// "POST /v1/users/{id}/disable") only as a side effect of dispatching the
+// request, not before. next and routeFn observe the same *http.Request, so
+// reading it back afterward is safe.
+func MiddlewareDynamic(routeFn func(*http.Request) string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next(sw, r)
+		route := routeFn(r)
 		httpRequests.WithLabelValues(r.Method, route, strconv.Itoa(sw.status)).Inc()
+		// Signaling is a long-lived WebSocket upgrade, not a request/response; its
+		// "duration" is the connection lifetime and would blow out the latency
+		// histogram's buckets. Still counted above (useful as a connection-open
+		// counter), just excluded from the latency distribution.
+		if route == signalingRoute {
+			return
+		}
 		httpDuration.WithLabelValues(route).Observe(time.Since(start).Seconds())
 	}
 }
+
+// signalingRoute is the registered pattern for the signaling WebSocket upgrade,
+// excluded from the latency histogram (see MiddlewareDynamic).
+const signalingRoute = "GET /v1/signaling"
 
 type statusRecorder struct {
 	http.ResponseWriter

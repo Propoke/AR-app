@@ -31,12 +31,12 @@ func (p *LocalPresence) Join(room string, role Role) []Role {
 	return others
 }
 
-func (p *LocalPresence) Leave(room string, role Role) {
+func (p *LocalPresence) Leave(room string, role Role) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	counts := p.rooms[room]
 	if counts == nil {
-		return
+		return true // already gone; treat as empty
 	}
 	if counts[role] > 0 {
 		counts[role]--
@@ -46,7 +46,9 @@ func (p *LocalPresence) Leave(room string, role Role) {
 	}
 	if len(counts) == 0 {
 		delete(p.rooms, room)
+		return true
 	}
+	return false
 }
 
 func (p *LocalPresence) Close() error { return nil }

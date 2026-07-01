@@ -1,0 +1,15 @@
+-- Emails must be globally unique across organizations.
+--
+-- POST /v1/auth/login takes only email + password (no org selector), and
+-- resolves a login by email alone:
+--   SELECT ... FROM users WHERE lower(email) = $1 ORDER BY created_at LIMIT 1
+-- The previous schema only enforced UNIQUE(org_id, email), which permitted the
+-- same email to exist in two different organizations. In that case login
+-- would always resolve to whichever account was created first, and the second
+-- account could never be authenticated. This index closes that gap.
+--
+-- This is safe to apply on a fresh install (no existing rows). If applying to
+-- a database that predates this migration and somehow already has a duplicate
+-- email across orgs, this migration will fail until the duplicate is resolved
+-- manually — by design, since silently picking a winner would hide an account.
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_ci ON users (lower(email));

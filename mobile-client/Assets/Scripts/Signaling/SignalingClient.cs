@@ -24,10 +24,18 @@ namespace ARApp.Signaling
 
         public SignalingClient(Uri baseWsUrl) => _baseWsUrl = baseWsUrl;
 
+        // The signaling token is sent via the X-Signaling-Token request header
+        // rather than a query parameter, so it isn't captured verbatim in
+        // reverse-proxy/load-balancer access logs (which typically record the
+        // full request URL but not arbitrary headers). The backend still also
+        // accepts a "token" query parameter for compatibility, in case a given
+        // platform's WebSocket stack can't set custom headers before the
+        // handshake — see docs/handshake-troubleshooting.md if connections that
+        // worked with the old query-string form start failing after an update.
         public async Task ConnectAsync(string room, string signalingToken)
         {
-            var url = new Uri(_baseWsUrl,
-                $"/v1/signaling?room={Uri.EscapeDataString(room)}&role=phone&token={Uri.EscapeDataString(signalingToken)}");
+            var url = new Uri(_baseWsUrl, $"/v1/signaling?room={Uri.EscapeDataString(room)}&role=phone");
+            _ws.Options.SetRequestHeader("X-Signaling-Token", signalingToken);
             await _ws.ConnectAsync(url, _cts.Token);
             _ = Task.Run(ReceiveLoop);
         }

@@ -209,6 +209,41 @@ func (s *Service) ICEServers(sessionID uuid.UUID) []turn.ICEServer {
 	return s.turn.Credentials(sessionID.String())
 }
 
+// MarkEnded marks a session's signaling room as ended: called when the
+// session's last connected peer disconnects (see signaling.Hub.OnRoomEnded).
+// Idempotent — it only transitions an 'active' session, so it has no effect if
+// the session was already ended or never got past 'pending' (that case is
+// handled by ExpireStalePending instead, since a room can go empty without a
+// phone ever having redeemed the token at all).
+func (s *Service) MarkEnded(ctx context.Context, sessionID uuid.UUID) error {
+	_, err := s.db.Exec(ctx,
+		`UPDATE sessions SET status = 'ended', ended_at = now()
+		 WHERE id = $1 AND status = 'active'`,
+		sessionID,
+	)
+	if err != nil {
+		return fmt.Errorf("mark session ended: %w", err)
+	}
+	return nil
+}
+
+// ExpireStalePending marks 'pending' sessions older than olderThan as
+// 'expired' — connection tokens that were minted but never redeemed (e.g. the
+// technician gave up before the end-user connected). Returns the number of
+// rows affected, for logging. Intended to be run periodically (see cmd/server).
+func (s *Service) ExpireStalePending(ctx context.Context, olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-olderThan)
+	tag, err := s.db.Exec(ctx,
+		`UPDATE sessions SET status = 'expired'
+		 WHERE status = 'pending' AND created_at < $1`,
+		cutoff,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("expire stale pending sessions: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (s *Service) invalidate(ctx context.Context, connectID string) {
 	_, _ = s.redis.Del(ctx, tokenKey(connectID), attemptsKey(connectID)).Result()
 }

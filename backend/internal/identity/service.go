@@ -108,6 +108,16 @@ func (s *Service) CreateUser(ctx context.Context, orgID uuid.UUID, email, passwo
 // Authenticate verifies an email/password pair and returns the user on success.
 // It always performs a password hash comparison to avoid leaking, via timing,
 // whether the email exists.
+//
+// Login takes only an email (no org selector), so email must be globally
+// unique across organizations — enforced by the users_email_unique_ci index
+// (migration 0004). Without that constraint, the same email could exist in two
+// orgs and this query would always resolve to whichever was created first,
+// silently locking the second account out of login forever. The ORDER BY /
+// LIMIT here is defense-in-depth only (e.g. a database that predates the
+// index): it guarantees this query never errors on multiple rows, but it does
+// not fix the underlying collision — the index is what prevents it from
+// occurring at all.
 func (s *Service) Authenticate(ctx context.Context, email, password string) (User, error) {
 	email = normalizeEmail(email)
 	var (

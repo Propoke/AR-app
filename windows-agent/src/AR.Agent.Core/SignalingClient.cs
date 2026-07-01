@@ -23,12 +23,15 @@ public sealed class SignalingClient : IAsyncDisposable
 
     /// <summary>
     /// Opens the WebSocket for the given room as the agent role, presenting the
-    /// per-session signaling join token.
+    /// per-session signaling join token via the X-Signaling-Token request
+    /// header (rather than a query parameter) so it isn't captured verbatim in
+    /// reverse-proxy or load-balancer access logs, which typically record the
+    /// full request URL including its query string but not arbitrary headers.
     /// </summary>
     public async Task ConnectAsync(string room, string signalingToken, CancellationToken ct = default)
     {
-        var url = new Uri(_baseWsUrl,
-            $"/v1/signaling?room={Uri.EscapeDataString(room)}&role=agent&token={Uri.EscapeDataString(signalingToken)}");
+        var url = new Uri(_baseWsUrl, $"/v1/signaling?room={Uri.EscapeDataString(room)}&role=agent");
+        _ws.Options.SetRequestHeader("X-Signaling-Token", signalingToken);
         await _ws.ConnectAsync(url, ct).ConfigureAwait(false);
     }
 

@@ -5,12 +5,25 @@ package recordings
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// MaxRecordingSizeBytes bounds the size Complete will accept. sizeBytes is
+// self-reported by the uploading client — the backend never proxies media, so
+// it cannot verify the object's actual size without an additional signed
+// HEAD/GetObjectAttributes request against the bucket (not implemented here).
+// This bound only rejects obviously invalid values (non-positive or absurdly
+// large); it is not a substitute for verifying against the object store if
+// accurate sizes matter for billing or quota enforcement.
+const MaxRecordingSizeBytes = 10 << 30 // 10 GiB
+
+// ErrInvalidSize is returned by Complete when sizeBytes is outside the allowed range.
+var ErrInvalidSize = errors.New("size_bytes must be positive and within the allowed maximum")
 
 // Presigner produces presigned upload URLs for object keys. Implemented by the
 // MinIO/S3 adapter; faked in tests.
@@ -94,6 +107,9 @@ func (s *Service) CreateUpload(ctx context.Context, orgID, sessionID uuid.UUID, 
 
 // Complete marks a recording available after the client finishes uploading.
 func (s *Service) Complete(ctx context.Context, orgID, recordingID uuid.UUID, sizeBytes int64) error {
+	if sizeBytes <= 0 || sizeBytes > MaxRecordingSizeBytes {
+		return ErrInvalidSize
+	}
 	tag, err := s.db.Exec(ctx,
 		`UPDATE recordings SET status='available', size_bytes=$1, completed_at=now()
 		 WHERE id=$2 AND org_id=$3 AND status='pending'`,

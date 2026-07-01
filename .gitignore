@@ -26,6 +26,9 @@ build/
 node_modules/
 npm-debug.log*
 
+# Redis snapshot (e.g. from running redis-server locally for integration tests)
+dump.rdb
+
 # .NET (windows-agent, later)
 [Bb]in/
 [Oo]bj/

@@ -27,7 +27,15 @@ public interface IMicrophone
 /// <summary>A speaker that plays encoded (Opus) audio payloads received from the peer.</summary>
 public interface ISpeaker
 {
-    void PlayEncoded(byte[] opusPayload);
+    /// <param name="payloadType">
+    /// The RTP payload type number the packet actually arrived with (i.e. the
+    /// value negotiated in the SDP for Opus, e.g. RTPPacket.Header.PayloadType
+    /// on the SIPSorcery side) — not a hardcoded/guessed constant. The audio
+    /// sink uses this to know which codec to decode the payload as; passing
+    /// the wrong number silently feeds it bytes it will try to decode as a
+    /// different codec.
+    /// </param>
+    void PlayEncoded(int payloadType, byte[] opusPayload);
 }
 
 /// <summary>

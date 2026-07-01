@@ -117,6 +117,46 @@ func getJSON(t *testing.T, url, token string) (*http.Response, map[string]any) {
 	return resp, out
 }
 
+// TestEmailIsGloballyUniqueAcrossOrgs guards against a real bug: login takes
+// only an email + password (no org selector) and resolves the account by email
+// alone, so if the same email could exist in two different organizations, the
+// second account could never log in (the query always resolves to whichever
+// row is oldest). Registering a second org with an email already used by a
+// first org must be rejected outright (409), rather than silently succeeding
+// and creating an unreachable account.
+func TestEmailIsGloballyUniqueAcrossOrgs(t *testing.T) {
+	srv := newServer(t)
+	email := "dup-" + time.Now().Format("150405.000000") + "@example.com"
+
+	resp, _ := postJSON(t, srv.URL+"/v1/auth/register", "", map[string]string{
+		"org_name": "First Org", "email": email, "password": "hunter2hunter2", "display_name": "First",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("first register: want 201, got %d", resp.StatusCode)
+	}
+
+	// Same email, different org name/password: must be rejected, not create a
+	// second, unreachable account.
+	resp, body := postJSON(t, srv.URL+"/v1/auth/register", "", map[string]string{
+		"org_name": "Second Org", "email": email, "password": "differentpassword", "display_name": "Second",
+	})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("second register with duplicate email: want 409, got %d (body=%v)", resp.StatusCode, body)
+	}
+
+	// The original account must still be the one and only account reachable by
+	// this email, and it must still authenticate with its own password.
+	resp, login := postJSON(t, srv.URL+"/v1/auth/login", "", map[string]string{
+		"email": email, "password": "hunter2hunter2",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("login to the first (only) account: want 200, got %d", resp.StatusCode)
+	}
+	if user, _ := login["user"].(map[string]any); user["display_name"] != "First" {
+		t.Fatalf("login resolved to the wrong/an unexpected account: %v", login)
+	}
+}
+
 // TestUserManagementAndRevocation covers admin user CRUD, logout-based refresh
 // revocation, and account disable.
 func TestUserManagementAndRevocation(t *testing.T) {

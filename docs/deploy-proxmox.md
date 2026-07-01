@@ -139,6 +139,29 @@ When you want clients that aren't on the tunnel:
    ```
    Caddy obtains a Let's Encrypt cert automatically. Clients now use
    `https://$DOMAIN` (WS derives to `wss://`).
+5. **Set `TRUSTED_PROXY_CIDRS`** now that Caddy sits in front of the backend.
+   Without it, the backend's login/register/redeem rate limiting keys on
+   Caddy's own container IP for *every* client (since that's who it sees the
+   connection from) — throttling everyone as if they were one client instead of
+   each real client individually. Find Caddy's subnet and set only that:
+   ```bash
+   docker network inspect infra_default | grep Subnet   # e.g. 172.19.0.0/16
+   ```
+   ```bash
+   # .env
+   TRUSTED_PROXY_CIDRS=172.19.0.0/16
+   ```
+   Never set this to a range that real clients could connect from directly —
+   only the reverse proxy's own address/subnet.
+6. **Set `BACKEND_BIND=127.0.0.1`** now that Caddy is the intended entry point.
+   Without it, the backend's raw `:8080` stays published on every interface
+   even with Caddy running — anyone who can reach the VM at all (another host
+   on the LAN, a misconfigured firewall rule) can hit the backend directly and
+   skip TLS entirely. Binding it to loopback forces all traffic through Caddy:
+   ```bash
+   # .env
+   BACKEND_BIND=127.0.0.1
+   ```
 
 > **Serving both at once** (tunnel clients on the WG IP *and* WAN clients): coturn
 > can advertise multiple relay addresses. Run it with several `--external-ip` flags
@@ -177,9 +200,21 @@ caveats.
 - `docker-compose.prod.yml`: coturn reads `TURN_SECRET`/`TURN_REALM`/
   `TURN_EXTERNAL_IP`/relay range from the env (fixes a secret mismatch, enables
   NAT/tunnel addressing); Caddy is behind a `tls` profile so the WireGuard scenario
-  runs without it; the backend is published on `:8080` for direct tunnel access;
-  **Prometheus + Grafana** added with auto-provisioned datasource and dashboard.
+  runs without it; the backend's `:8080` bind interface is controlled by
+  `BACKEND_BIND` (0.0.0.0 default for direct tunnel access, 127.0.0.1 when Caddy
+  fronts it, so TLS can't be bypassed by hitting the backend directly);
+  **Prometheus + Grafana** added with auto-provisioned datasource and dashboard;
+  `TRUSTED_PROXY_CIDRS` passed through to the backend.
 - `.env.example`: `TURN_EXTERNAL_IP`, `TURN_MIN_PORT`, `TURN_MAX_PORT`,
-  `GRAFANA_USER`, `GRAFANA_PASSWORD`.
+  `GRAFANA_USER`, `GRAFANA_PASSWORD`, `TRUSTED_PROXY_CIDRS`, `BACKEND_BIND`.
 - `infra/prometheus/prometheus.yml`, `infra/grafana/**`: monitoring config.
-No application code changes are needed.
+- Backend: rate limiting now only trusts `X-Forwarded-For` from addresses in
+  `TRUSTED_PROXY_CIDRS` (empty/default = never), closing a spoofing gap where a
+  direct, untrusted client (as in the WireGuard/LAN scenario) could set that
+  header itself to dodge its own login/register/redeem throttling.
+- Backend: sessions now transition to `ended` when their signaling room empties
+  and `expired` when a minted token is never redeemed (periodic sweep), closing
+  a gap where session status/history bookkeeping never advanced past
+  pending/active. Recordings now reject the `viewer` role from creating/
+  completing uploads (read-only, list-only) and reject non-positive/absurd
+  `size_bytes` values.

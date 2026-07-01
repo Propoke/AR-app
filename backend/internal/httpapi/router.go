@@ -27,10 +27,11 @@ type Deps struct {
 	Logger    *slog.Logger
 	// Readiness reports 200 when dependencies (DB, Redis) are reachable, else 503.
 	Readiness http.HandlerFunc
-	// AuthLimiter and RedeemLimiter throttle brute-force attempts. Optional (nil
-	// disables throttling for that route).
-	AuthLimiter   *ratelimit.Limiter
-	RedeemLimiter *ratelimit.Limiter
+	// RegisterLimiter, AuthLimiter, and RedeemLimiter throttle brute-force /
+	// signup-abuse attempts. Optional (nil disables throttling for that route).
+	RegisterLimiter *ratelimit.Limiter
+	AuthLimiter     *ratelimit.Limiter
+	RedeemLimiter   *ratelimit.Limiter
 	// Recordings is optional; nil disables the recording endpoints.
 	Recordings *recordings.Handlers
 }
@@ -50,8 +51,8 @@ func New(d Deps) http.Handler {
 	}
 	mux.Handle("GET /metrics", metrics.Handler())
 
-	// Public auth endpoints. Login is throttled per client IP.
-	mux.HandleFunc("POST /v1/auth/register", d.Identity.Register)
+	// Public auth endpoints. Register and login are throttled per client IP.
+	mux.HandleFunc("POST /v1/auth/register", throttle(d.RegisterLimiter, "register", d.Identity.Register))
 	mux.HandleFunc("POST /v1/auth/login", throttle(d.AuthLimiter, "login", d.Identity.Login))
 	mux.HandleFunc("POST /v1/auth/refresh", d.Identity.Refresh)
 
@@ -94,12 +95,27 @@ func throttle(l *ratelimit.Limiter, prefix string, h http.HandlerFunc) http.Hand
 	return l.Middleware(prefix, h)
 }
 
-// instrument records request metrics. Paths in this API are low-cardinality
-// (no ids are embedded in the path), so the raw path is a safe metric label.
+// instrument records request metrics labeled by the matched route *pattern*
+// (e.g. "POST /v1/users/{id}/disable"), not the raw request path. Several
+// routes embed a UUID path segment ({id}); labeling by raw path would create a
+// new Prometheus time series per distinct id — unbounded cardinality that
+// degrades Prometheus over time.
+//
+// ServeMux only populates the exported r.Pattern field as a side effect of its
+// own ServeHTTP dispatching the request, so the pattern must be read back
+// *after* next has run — not resolved upfront via mux.Handler(r), which would
+// skip that side effect and silently break r.PathValue("id") for every {id}
+// route (SetUserDisabled, recordings) since the wildcard bindings are only
+// wired up inside ServeHTTP's own dispatch, not by Handler().
 func instrument(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		metrics.Middleware(r.URL.Path, next.ServeHTTP)(w, r)
-	})
+	return metrics.MiddlewareDynamic(routePattern, next.ServeHTTP)
+}
+
+func routePattern(r *http.Request) string {
+	if r.Pattern == "" {
+		return "unmatched"
+	}
+	return r.Pattern
 }
 
 // logging emits one structured line per request with method, path, status, and latency.

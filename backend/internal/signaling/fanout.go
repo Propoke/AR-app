@@ -37,7 +37,11 @@ type Presence interface {
 	// Join records that role is present in room and returns the other roles already
 	// present (so the caller can decide whether the room is ready).
 	Join(room string, role Role) []Role
-	// Leave records that role has left room.
-	Leave(room string, role Role)
+	// Leave records that role has left room and reports whether the room has no
+	// roles left afterward. This must be authoritative across instances (not just
+	// this process's local peers), since a room can have peers connected to
+	// different instances behind the Redis fanout — callers use this signal to
+	// know when a session has truly ended.
+	Leave(room string, role Role) (empty bool)
 	Close() error
 }

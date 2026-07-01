@@ -18,7 +18,14 @@ Work top-down: each stage must succeed before the next can.
 Symptoms: both sides log the WebSocket open, no offer/answer.
 - Confirm both presented a valid `signaling_token` (agent from mint, phone from
   redeem) for the **same `room`**. A 401 on the WS upgrade means the token is
-  wrong/expired/mismatched to the role.
+  wrong/expired/mismatched to the role. Both clients send it via the
+  `X-Signaling-Token` request header (set via `ClientWebSocket.Options.
+  SetRequestHeader` before connecting) rather than the old `token` query
+  parameter, so it doesn't end up captured in reverse-proxy access logs. The
+  backend still also accepts `?token=...` for compatibility — if a platform's
+  WebSocket stack can't set custom headers before the handshake (worth
+  double-checking on iOS/IL2CPP specifically, since this hasn't been verified
+  on-device), fall back to the query parameter there.
 - Confirm the agent receives **`peer-ready`**. The backend sends it to both peers
   once the room has two occupants (fixed: it used to go only to the second joiner).
   The agent sends its offer on `peer-ready`; if it never arrives, the phone likely

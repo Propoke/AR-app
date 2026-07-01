@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/propoke/ar-app/backend/internal/auth"
 	"github.com/propoke/ar-app/backend/internal/config"
 	"github.com/propoke/ar-app/backend/internal/httpapi"
@@ -59,6 +61,13 @@ func run(logger *slog.Logger) error {
 	issuer := auth.NewIssuer(cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL, cfg.SignalingTokenTTL)
 	turnMinter := turn.NewMinter(cfg.TURNSecret, cfg.TURNURLs, cfg.TURNCredTTL)
 
+	// X-Forwarded-For is only honored from these addresses (e.g. Caddy's) when
+	// deriving a client IP for rate limiting; empty by default (see config).
+	trustedProxies, err := ratelimit.ParseTrustedProxies(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		return fmt.Errorf("TRUSTED_PROXY_CIDRS: %w", err)
+	}
+
 	identitySvc := identity.NewService(st.DB)
 	sessionSvc := session.NewService(st.DB, st.Redis, turnMinter, issuer, cfg.SessionTokenTTL)
 
@@ -72,6 +81,23 @@ func run(logger *slog.Logger) error {
 	} else {
 		hub = signaling.NewHub()
 	}
+
+	// Mark a session ended in the database once its signaling room has no
+	// occupants left on any instance (see signaling.Hub.OnRoomEnded). Room ids
+	// are always session UUIDs (set at mint/redeem time), so this should never
+	// fail to parse; if it somehow did, there's nothing sensible to do but log.
+	hub.OnRoomEnded(func(room string) {
+		sessionID, err := uuid.Parse(room)
+		if err != nil {
+			logger.Warn("room-ended callback: room is not a session id", "room", room, "err", err)
+			return
+		}
+		endCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := sessionSvc.MarkEnded(endCtx, sessionID); err != nil {
+			logger.Warn("mark session ended failed", "session_id", sessionID, "err", err)
+		}
+	})
 
 	// Enforce per-session signaling join tokens: the token must authorize the
 	// exact room and role the peer is connecting as.
@@ -99,20 +125,27 @@ func run(logger *slog.Logger) error {
 		logger.Info("session recordings enabled", "bucket", cfg.S3Bucket)
 	}
 
+	rlStore := ratelimit.NewRedisStore(st.Redis)
 	handler := httpapi.New(httpapi.Deps{
-		Identity:      identity.NewHandlers(identitySvc, issuer),
-		Session:       session.NewHandlers(sessionSvc),
-		Signaling:     signaling.NewHandler(hub, logger, signalingAuth),
-		Issuer:        issuer,
-		Logger:        logger,
-		Readiness:     readinessHandler(st),
-		AuthLimiter:   ratelimit.New(ratelimit.NewRedisStore(st.Redis), 10, time.Minute, logger),
-		RedeemLimiter: ratelimit.New(ratelimit.NewRedisStore(st.Redis), 20, time.Minute, logger),
-		Recordings:    recordingHandlers,
+		Identity:        identity.NewHandlers(identitySvc, issuer),
+		Session:         session.NewHandlers(sessionSvc),
+		Signaling:       signaling.NewHandler(hub, logger, signalingAuth),
+		Issuer:          issuer,
+		Logger:          logger,
+		Readiness:       readinessHandler(st),
+		RegisterLimiter: ratelimit.New(rlStore, 5, time.Minute, logger, trustedProxies),
+		AuthLimiter:     ratelimit.New(rlStore, 10, time.Minute, logger, trustedProxies),
+		RedeemLimiter:   ratelimit.New(rlStore, 20, time.Minute, logger, trustedProxies),
+		Recordings:      recordingHandlers,
 	})
 
 	// Sample the active signaling room count into the Prometheus gauge.
 	go sampleRooms(ctx, hub)
+
+	// Periodically expire connection tokens that were minted but never redeemed
+	// (the room-ended signal above only covers sessions that reached 'active';
+	// a token nobody ever redeemed leaves its session stuck at 'pending').
+	go sweepStalePendingSessions(ctx, sessionSvc, cfg.SessionTokenTTL, logger)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -168,6 +201,33 @@ func sampleRooms(ctx context.Context, hub *signaling.Hub) {
 			return
 		case <-ticker.C:
 			metrics.SignalingRooms.Set(float64(hub.RoomCount()))
+		}
+	}
+}
+
+// sweepStalePendingSessions periodically expires 'pending' sessions whose
+// connection token was minted but never redeemed. The cutoff is a multiple of
+// the token TTL, not the TTL itself, so a token that's about to be redeemed
+// right at its expiry boundary is never raced.
+func sweepStalePendingSessions(ctx context.Context, svc *session.Service, tokenTTL time.Duration, logger *slog.Logger) {
+	const cutoffMultiplier = 2
+	const sweepInterval = 5 * time.Minute
+
+	ticker := time.NewTicker(sweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweepCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			n, err := svc.ExpireStalePending(sweepCtx, cutoffMultiplier*tokenTTL)
+			cancel()
+			if err != nil {
+				logger.Warn("sweep stale pending sessions failed", "err", err)
+			} else if n > 0 {
+				logger.Info("expired stale pending sessions", "count", n)
+			}
 		}
 	}
 }
