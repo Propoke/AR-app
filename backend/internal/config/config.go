@@ -26,6 +26,10 @@ type Config struct {
 	// SignalingTokenTTL bounds a signaling join token's lifetime (a session's max length).
 	SignalingTokenTTL time.Duration
 
+	// SignalingFanout selects the signaling delivery backend: "local" (single
+	// instance, default) or "redis" (cross-instance pub/sub for multiple replicas).
+	SignalingFanout string
+
 	// TURNSecret is the shared secret used to mint coturn TURN REST credentials.
 	TURNSecret  string
 	TURNRealm   string
@@ -50,19 +54,20 @@ func (c *Config) RecordingsEnabled() bool { return c.S3Endpoint != "" }
 // local development. It returns an error only for values that cannot be parsed.
 func Load() (*Config, error) {
 	c := &Config{
-		HTTPAddr:    getenv("HTTP_ADDR", ":8080"),
-		DatabaseURL: getenv("DATABASE_URL", "postgres://ar:ar@localhost:5432/ar?sslmode=disable"),
-		RedisURL:    getenv("REDIS_URL", "redis://localhost:6379/0"),
-		JWTSecret:   []byte(getenv("JWT_SECRET", "dev-insecure-secret-change-me")),
-		TURNSecret:  getenv("TURN_SECRET", "dev-turn-secret"),
-		TURNRealm:   getenv("TURN_REALM", "ar.local"),
-		TURNURLs:    splitNonEmpty(getenv("TURN_URLS", "turn:localhost:3478?transport=udp")),
-		S3Endpoint:  getenv("S3_ENDPOINT", ""),
-		S3AccessKey: getenv("S3_ACCESS_KEY", ""),
-		S3SecretKey: getenv("S3_SECRET_KEY", ""),
-		S3Bucket:    getenv("S3_BUCKET", "recordings"),
-		S3Region:    getenv("S3_REGION", "us-east-1"),
-		S3UseSSL:    getenv("S3_USE_SSL", "true") == "true",
+		HTTPAddr:        getenv("HTTP_ADDR", ":8080"),
+		DatabaseURL:     getenv("DATABASE_URL", "postgres://ar:ar@localhost:5432/ar?sslmode=disable"),
+		RedisURL:        getenv("REDIS_URL", "redis://localhost:6379/0"),
+		JWTSecret:       []byte(getenv("JWT_SECRET", "dev-insecure-secret-change-me")),
+		TURNSecret:      getenv("TURN_SECRET", "dev-turn-secret"),
+		TURNRealm:       getenv("TURN_REALM", "ar.local"),
+		TURNURLs:        splitNonEmpty(getenv("TURN_URLS", "turn:localhost:3478?transport=udp")),
+		S3Endpoint:      getenv("S3_ENDPOINT", ""),
+		S3AccessKey:     getenv("S3_ACCESS_KEY", ""),
+		S3SecretKey:     getenv("S3_SECRET_KEY", ""),
+		S3Bucket:        getenv("S3_BUCKET", "recordings"),
+		S3Region:        getenv("S3_REGION", "us-east-1"),
+		S3UseSSL:        getenv("S3_USE_SSL", "true") == "true",
+		SignalingFanout: getenv("SIGNALING_FANOUT", "local"),
 	}
 
 	var err error

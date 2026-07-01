@@ -41,10 +41,14 @@
 | Phone can't redeem | Token expired (TTL) or already used | Connection tokens are single-use, ~10 min TTL; agent mints a fresh one |
 
 ## Scaling
-- The signaling relay is currently in-memory (single instance). To run multiple
-  backend replicas, add the Redis pub/sub fan-out noted in `internal/signaling`.
+- Signaling delivery is pluggable via `SIGNALING_FANOUT`. Default `local` is
+  single-instance; set `redis` to distribute frames and presence across replicas
+  over Redis pub/sub (`internal/signaling/redis.go`). Validate a two-instance
+  deployment before relying on it — the local path is unit-tested, the Redis path
+  needs a multi-instance integration test.
 - coturn scales horizontally behind the shared secret; media never transits the app.
-- Postgres/Redis: use managed instances with backups in production.
+- Postgres/Redis: use managed instances with backups in production. With
+  `SIGNALING_FANOUT=redis`, Redis is on the signaling hot path — size accordingly.
 
 ## Secrets rotation
 - Rotating `JWT_SECRET` invalidates outstanding access/refresh and signaling tokens

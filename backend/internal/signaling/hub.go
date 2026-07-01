@@ -1,10 +1,12 @@
 // Package signaling relays WebRTC SDP/ICE and early annotation messages between
 // the two peers of a session over WebSockets.
 //
-// Phase 1 provides an in-memory, single-instance hub: a room holds at most the
-// two peers (agent + phone) and forwards each peer's messages to the other.
-// Scaling to multiple backend instances will add a Redis pub/sub fan-out layer
-// (Phase 2); the Peer/Room abstraction here is designed to make that swap local.
+// Delivery is abstracted behind Fanout (frame distribution) and Presence (which
+// roles are in a room). The default LocalFanout/LocalPresence keep everything in
+// one process; the Redis implementations add cross-instance delivery so the
+// backend can run multiple replicas. Each instance always holds only its own
+// peers' sockets; frames destined for a peer on another instance travel via the
+// fanout.
 package signaling
 
 import (
@@ -19,6 +21,14 @@ const (
 	RolePhone Role = "phone"
 )
 
+// opposite returns the other role in a session.
+func opposite(r Role) Role {
+	if r == RoleAgent {
+		return RolePhone
+	}
+	return RoleAgent
+}
+
 // Peer is a connected participant that can receive raw message frames.
 type Peer interface {
 	ID() string
@@ -28,116 +38,93 @@ type Peer interface {
 	Send(frame []byte) bool
 }
 
-// Room holds the peers of a single session keyed by role.
-type Room struct {
-	mu    sync.Mutex
-	peers map[Role]Peer
-}
-
-// Hub manages all active rooms.
+// Hub manages local peers and routes frames through a Fanout, using Presence to
+// know when both sides of a room are connected.
 type Hub struct {
-	mu    sync.RWMutex
-	rooms map[string]*Room
+	mu       sync.RWMutex
+	rooms    map[string]map[Role]Peer // local peers only
+	fanout   Fanout
+	presence Presence
 }
 
-// NewHub constructs an empty Hub.
+// NewHub constructs a single-process Hub (local fanout + presence).
 func NewHub() *Hub {
-	return &Hub{rooms: make(map[string]*Room)}
+	return NewHubWith(NewLocalFanout(), NewLocalPresence())
 }
 
-// Join adds a peer to a room, replacing any existing peer with the same role
-// (e.g. a reconnect). It returns the room.
-func (h *Hub) Join(roomID string, p Peer) *Room {
-	h.mu.Lock()
-	room := h.rooms[roomID]
-	if room == nil {
-		room = &Room{peers: make(map[Role]Peer)}
-		h.rooms[roomID] = room
+// NewHubWith constructs a Hub with the given Fanout and Presence (e.g. Redis-backed
+// for multi-instance deployments).
+func NewHubWith(fanout Fanout, presence Presence) *Hub {
+	h := &Hub{
+		rooms:    make(map[string]map[Role]Peer),
+		fanout:   fanout,
+		presence: presence,
 	}
-	h.mu.Unlock()
-
-	room.mu.Lock()
-	room.peers[p.Role()] = p
-	room.mu.Unlock()
-	return room
+	fanout.Start(h.deliverLocal)
+	return h
 }
 
-// Leave removes a peer from a room (only if it is still the current occupant of
-// its role) and garbage-collects empty rooms.
-func (h *Hub) Leave(roomID string, p Peer) {
+// Join registers a peer locally and, if its counterpart is present anywhere,
+// notifies both sides that the room is ready (so the agent sends its offer).
+func (h *Hub) Join(room string, p Peer) {
 	h.mu.Lock()
-	room := h.rooms[roomID]
+	if h.rooms[room] == nil {
+		h.rooms[room] = make(map[Role]Peer)
+	}
+	h.rooms[room][p.Role()] = p
 	h.mu.Unlock()
-	if room == nil {
-		return
-	}
 
-	room.mu.Lock()
-	if cur, ok := room.peers[p.Role()]; ok && cur.ID() == p.ID() {
-		delete(room.peers, p.Role())
-	}
-	empty := len(room.peers) == 0
-	room.mu.Unlock()
-
-	if empty {
-		h.mu.Lock()
-		// Re-check under the write lock in case someone rejoined meanwhile.
-		if r := h.rooms[roomID]; r != nil {
-			r.mu.Lock()
-			if len(r.peers) == 0 {
-				delete(h.rooms, roomID)
-			}
-			r.mu.Unlock()
+	others := h.presence.Join(room, p.Role())
+	for _, other := range others {
+		if other == opposite(p.Role()) {
+			ready := mustMarshal(envelope{Type: "peer-ready"})
+			p.Send(ready)                                     // the newcomer (local)
+			h.fanout.Publish(room, opposite(p.Role()), ready) // its counterpart (local or remote)
+			break
 		}
-		h.mu.Unlock()
 	}
 }
 
-// Relay forwards a frame from sender to the other peer in the room. It reports
-// whether a counterpart existed to receive it.
-func (h *Hub) Relay(roomID string, sender Peer, frame []byte) bool {
+// Leave removes a peer (if it is still the current occupant of its role) and
+// updates presence.
+func (h *Hub) Leave(room string, p Peer) {
+	h.mu.Lock()
+	if peers := h.rooms[room]; peers != nil {
+		if cur, ok := peers[p.Role()]; ok && cur.ID() == p.ID() {
+			delete(peers, p.Role())
+		}
+		if len(peers) == 0 {
+			delete(h.rooms, room)
+		}
+	}
+	h.mu.Unlock()
+
+	h.presence.Leave(room, p.Role())
+}
+
+// Relay forwards a frame from sender to the opposite peer in the room, wherever
+// that peer is connected.
+func (h *Hub) Relay(room string, sender Peer, frame []byte) {
+	h.fanout.Publish(room, opposite(sender.Role()), frame)
+}
+
+// deliverLocal sends a frame to the local peer of targetRole in room, if present.
+// It is the callback invoked by the fanout on every instance.
+func (h *Hub) deliverLocal(room string, targetRole Role, frame []byte) {
 	h.mu.RLock()
-	room := h.rooms[roomID]
+	var peer Peer
+	if peers := h.rooms[room]; peers != nil {
+		peer = peers[targetRole]
+	}
 	h.mu.RUnlock()
-	if room == nil {
-		return false
+	if peer != nil {
+		peer.Send(frame)
 	}
-
-	room.mu.Lock()
-	defer room.mu.Unlock()
-	delivered := false
-	for role, peer := range room.peers {
-		if role == sender.Role() {
-			continue
-		}
-		if peer.Send(frame) {
-			delivered = true
-		}
-	}
-	return delivered
 }
 
-// RoomCount returns the number of active rooms (for metrics).
+// RoomCount returns the number of active local rooms (for metrics).
 func (h *Hub) RoomCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.rooms)
-}
-
-// Counterpart returns the other peer in the room, if present.
-func (h *Hub) Counterpart(roomID string, self Peer) (Peer, bool) {
-	h.mu.RLock()
-	room := h.rooms[roomID]
-	h.mu.RUnlock()
-	if room == nil {
-		return nil, false
-	}
-	room.mu.Lock()
-	defer room.mu.Unlock()
-	for role, peer := range room.peers {
-		if role != self.Role() {
-			return peer, true
-		}
-	}
-	return nil, false
 }

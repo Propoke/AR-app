@@ -61,7 +61,17 @@ func run(logger *slog.Logger) error {
 
 	identitySvc := identity.NewService(st.DB)
 	sessionSvc := session.NewService(st.DB, st.Redis, turnMinter, issuer, cfg.SessionTokenTTL)
-	hub := signaling.NewHub()
+
+	// Signaling delivery: Redis pub/sub across replicas, or in-process by default.
+	var hub *signaling.Hub
+	if cfg.SignalingFanout == "redis" {
+		fanout := signaling.NewRedisFanout(st.Redis, logger)
+		presence := signaling.NewRedisPresence(st.Redis, cfg.SignalingTokenTTL)
+		hub = signaling.NewHubWith(fanout, presence)
+		logger.Info("signaling fanout", "mode", "redis")
+	} else {
+		hub = signaling.NewHub()
+	}
 
 	// Enforce per-session signaling join tokens: the token must authorize the
 	// exact room and role the peer is connecting as.
