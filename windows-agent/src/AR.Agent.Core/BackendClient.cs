@@ -46,6 +46,27 @@ public sealed class BackendClient
 
     public bool IsAuthenticated => _accessToken is not null;
 
+    /// <summary>
+    /// Checks that the backend is reachable and healthy (GET /healthz). Useful to
+    /// validate the server URL before the technician tries to sign in.
+    /// </summary>
+    public async Task<bool> CheckHealthAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var resp = await _http.GetAsync("/healthz", ct).ConfigureAwait(false);
+            return resp.IsSuccessStatusCode;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+        catch (TaskCanceledException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Logs in and stores the access token for subsequent calls.</summary>
     public async Task LoginAsync(string email, string password, CancellationToken ct = default)
     {

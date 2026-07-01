@@ -18,6 +18,7 @@
             <TextBox x:Name="ServerBox" PlaceholderText="server URL" Width="240" />
             <TextBox x:Name="EmailBox" PlaceholderText="email" Width="200" />
             <PasswordBox x:Name="PasswordBox" PlaceholderText="password" Width="160" />
+            <Button x:Name="TestButton" Content="Test" Click="OnTestConnectionClick" />
             <Button x:Name="LoginButton" Content="Sign in" Click="OnLoginClick" />
         </StackPanel>
 

@@ -31,6 +31,21 @@ public sealed partial class MainWindow : Window
         ServerBox.Text = ServerConfig.ResolveHttpBase().ToString();
     }
 
+    private async void OnTestConnectionClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var httpBase = ServerConfig.ResolveHttpBase(ServerBox.Text);
+            SetStatus($"Testing {httpBase}…");
+            var ok = await new BackendClient(httpBase).CheckHealthAsync();
+            SetStatus(ok ? $"Reachable: {httpBase}" : $"Not reachable: {httpBase}");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Bad server URL: {ex.Message}");
+        }
+    }
+
     private async void OnLoginClick(object sender, RoutedEventArgs e)
     {
         try
