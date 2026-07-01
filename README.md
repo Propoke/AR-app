@@ -47,10 +47,12 @@ troubleshooting. Two-way audio runs throughout.
    Prometheus metrics + readiness, Caddy TLS prod compose, GHCR/MSIX release
    pipeline. Session recordings + on-device builds are the remaining follow-ups.
 
-See `docs/verification.md` for how each layer is tested, `docs/runbook.md` for
-operations, and **`docs/first-session.md` for the step-by-step guide to a real
-device-to-device session** (Windows agent + Unity scene assembly). The remaining
-device-only check is SIPSorcery ⇄ libwebrtc on real Windows + phone hardware.
+Guides: **`docs/first-session.md`** (device-to-device session — Windows agent +
+Unity scene assembly), **`docs/deploy-proxmox.md`** (backend on a Proxmox VM/LXC,
+incl. coturn NAT), `docs/handshake-troubleshooting.md` (SIPSorcery ⇄ Unity),
+`docs/runbook.md` (operations), and `docs/verification.md` (how each layer is
+tested). The remaining device-only check is SIPSorcery ⇄ libwebrtc on real Windows
++ phone hardware.
 
 ## Quick start (Phase 1)
 

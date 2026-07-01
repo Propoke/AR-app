@@ -66,10 +66,23 @@ services:
   coturn:
     image: coturn/coturn:4.6
     restart: unless-stopped
+    # Host networking so coturn can allocate relay ports directly. On a NAT'd host
+    # (typical on Proxmox), TURN_EXTERNAL_IP must be the address clients reach it on
+    # and the UDP relay range must be forwarded/opened. The auth secret comes from
+    # the environment so it always matches the backend's TURN_SECRET.
     network_mode: host
-    volumes:
-      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
-    command: ["-c", "/etc/coturn/turnserver.conf"]
+    command:
+      - "-n"                                             # ignore any distro config file
+      - "--use-auth-secret"
+      - "--static-auth-secret=${TURN_SECRET:?}"
+      - "--realm=${TURN_REALM:-ar.local}"
+      - "--listening-port=3478"
+      - "--min-port=${TURN_MIN_PORT:-49160}"
+      - "--max-port=${TURN_MAX_PORT:-49200}"
+      - "--fingerprint"
+      - "--external-ip=${TURN_EXTERNAL_IP:?set to the IP clients reach coturn on}"
+      - "--log-file=stdout"
+      - "--simple-log"
 
 volumes:
   pgdata:

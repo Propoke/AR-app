@@ -1,5 +1,8 @@
 # Operations runbook
 
+> Deploying on **Proxmox**? See `docs/deploy-proxmox.md` for a VM/LXC walkthrough,
+> including the coturn NAT/port-forwarding specifics.
+
 ## Deploy (self-hosted)
 
 1. Provision hosts/DNS/firewall per `infra/terraform/` (app host, coturn host with a
