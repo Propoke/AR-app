@@ -11,12 +11,16 @@ Assets/Scripts/
   Signaling/SignalingClient.cs      signaling WebSocket (phone role)
   WebRtc/PhoneSession.cs            Unity.WebRTC: send AR camera (VP8) + audio (Opus), answer offer
   AR/AnnotationAnchorManager.cs     raycast (u,v) → persistent ARAnchor (the world-anchoring core)
+  AR/Annotation2DOverlay.cs         flat telestration fallback before anchoring
+  AR/ARCameraStreamer.cs            blit AR camera background into the streamed texture
+  UI/TokenEntryUI.cs                connect screen: ID + PIN → SessionController.Connect
   SessionController.cs              redeem token → signaling → WebRTC → AR
+Editor/ARSceneBootstrap.cs          "AR App ▸ Wire Session Scene" — one-click scene wiring
 Packages/manifest.json              com.unity.webrtc + AR Foundation + ARCore/ARKit + Newtonsoft
 ```
-Remaining for an on-device build: a Unity scene with AR session origin, the
-marker prefab, and the token-entry UI; plus blitting the AR camera background into
-the streamed RenderTexture. See `docs/verification.md`.
+To build on-device: create an XR Origin (AR) + AR Session, run **AR App ▸ Wire
+Session Scene**, set the backend URL, and build. Full walkthrough in
+`docs/first-session.md`; handshake debugging in `docs/handshake-troubleshooting.md`.
 
 ## Planned responsibilities
 - Token entry screen: user types `connect_id` + `pin`.

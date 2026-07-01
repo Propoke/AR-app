@@ -45,8 +45,20 @@ to prefill the server field.)
 > layer or native media (`WindowsMedia.cs`).
 
 ## 3. Mobile client — assemble the scene
-The scripts exist; they need a scene. In Unity, open `mobile-client` and build a
-scene with:
+
+**Fast path (recommended):** create the AR rig from the menu, then let the Editor
+tool wire the rest:
+1. **GameObject ▸ XR ▸ XR Origin (AR)** and **GameObject ▸ XR ▸ AR Session**.
+2. **AR App ▸ Wire Session Scene** (added by `Assets/Editor/ARSceneBootstrap.cs`).
+   This adds the AR managers, `ARCameraStreamer`, a marker prefab, the token-entry
+   UI (`TokenEntryUI`), the 2D overlay, and the controller graph — all references
+   wired. Then set the **backend URL** on the `Session` object and build.
+
+The tool is a scaffold; review the result in the Inspector and adjust visuals. The
+manual equivalent is below if you prefer to build it by hand.
+
+### Manual scene assembly
+In Unity, open `mobile-client` and build a scene with:
 
 1. **AR rig** — GameObject menu → XR → **XR Origin (AR)**. This creates an XR Origin
    with an AR Camera. On the AR Camera, confirm `ARCameraManager` and
@@ -95,5 +107,7 @@ Build to the device (Android: Build and Run; iOS: build the Xcode project, sign,
   in the harness-verified config). Check the agent's `SessionConnection` and the
   Unity peer both offer/accept these.
 
-See `docs/verification.md` for the per-layer checklist and `docs/runbook.md` for
-operations.
+For the SIPSorcery ⇄ Unity connection specifically — the highest-risk step — work
+through **`docs/handshake-troubleshooting.md`**, a top-down checklist for the first
+real device connection. See also `docs/verification.md` for the per-layer checklist
+and `docs/runbook.md` for operations.
