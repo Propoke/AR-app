@@ -71,7 +71,14 @@ public sealed class WindowsAudioDevice : IMicrophone, ISpeaker
 /// <summary>Decodes VP8 encoded samples to BGRA frames using the native VPX codec.</summary>
 public sealed class Vp8VideoDecoder : IVideoDecoder
 {
-    private readonly VideoEncoder _codec = new();
+    // SIPSorceryMedia.Encoders 0.0.12-pre ships a native vpxmd.dll (libvpx) and,
+    // per its package layout, exposes a VPX-specific wrapper class rather than a
+    // generic "VideoEncoder" (that name/API was assumed from an earlier version
+    // I could not verify against live NuGet). This is a best-informed guess based
+    // on the native binary's naming, not confirmed against the actual assembly —
+    // if this type name is still wrong, the next `dotnet build` will name the
+    // real one it expected in the same CS0246 error.
+    private readonly VpxVideoEncoder _codec = new();
 
     public VideoFrame? Decode(byte[] encodedSample)
     {
