@@ -18,14 +18,31 @@
     <!-- Run unpackaged during development; MSIX packaging is added in Phase 6. -->
     <WindowsPackageType>None</WindowsPackageType>
     <EnableMsixTooling>true</EnableMsixTooling>
+    <!--
+      Microsoft.WindowsAppSDK 1.6.240829007's build targets hard-require a
+      specific .NET SDK patch version (e.g. 8.0.402+) to match its pinned
+      Microsoft.Windows.SDK.NET.Ref. On any other installed SDK patch this
+      fails the build with:
+        "This version of the Windows App SDK requires Microsoft.Windows.SDK.NET.Ref ... or later."
+      Clearing WindowsSdkPackageVersion (Microsoft's own documented workaround
+      for this error) lets MSBuild resolve a compatible Windows SDK NET Ref
+      itself instead of requiring an exact .NET SDK patch match, so the build
+      isn't pinned to whichever SDK patch happens to be installed.
+    -->
+    <WindowsSdkPackageVersion></WindowsSdkPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.240829007" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
     <!-- Native media for the Windows build: microphone/speaker and VP8 decode.
-         These carry native binaries, so this project is Windows-only (not CI-built). -->
-    <PackageReference Include="SIPSorceryMedia.Windows" Version="0.0.74" />
+         These carry native binaries, so this project is Windows-only (not CI-built).
+         SIPSorceryMedia.Windows 0.0.74 does not exist on NuGet (an earlier,
+         unverified guess made without live NuGet access); 6.0.4 is the version
+         NuGet actually resolves to as of this writing. Pinned explicitly for a
+         reproducible restore instead of silently floating to "whatever is
+         latest" on every fresh restore. -->
+    <PackageReference Include="SIPSorceryMedia.Windows" Version="6.0.4" />
     <PackageReference Include="SIPSorceryMedia.Encoders" Version="0.0.12-pre" />
   </ItemGroup>
 
