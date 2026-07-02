@@ -1,10 +1,16 @@
 using AR.Agent.Core.Media;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media.Imaging;
+using SIPSorcery.Media;
 using SIPSorcery.Net;
 using SIPSorceryMedia.Abstractions;
 using SIPSorceryMedia.Encoders;
 using SIPSorceryMedia.Windows;
+// WindowsRuntimeBufferExtensions.AsStream(this IBuffer) — needed to turn
+// WriteableBitmap.PixelBuffer (a WinRT IBuffer) into a managed Stream below.
+// Without this using, the compiler only sees the unrelated
+// WindowsRuntimeStreamExtensions.AsStream(IRandomAccessStream) overload.
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace AR.Agent.App.Media;
 
@@ -71,13 +77,9 @@ public sealed class WindowsAudioDevice : IMicrophone, ISpeaker
 /// <summary>Decodes VP8 encoded samples to BGRA frames using the native VPX codec.</summary>
 public sealed class Vp8VideoDecoder : IVideoDecoder
 {
-    // SIPSorceryMedia.Encoders 0.0.12-pre ships a native vpxmd.dll (libvpx) and,
-    // per its package layout, exposes a VPX-specific wrapper class rather than a
-    // generic "VideoEncoder" (that name/API was assumed from an earlier version
-    // I could not verify against live NuGet). This is a best-informed guess based
-    // on the native binary's naming, not confirmed against the actual assembly —
-    // if this type name is still wrong, the next `dotnet build` will name the
-    // real one it expected in the same CS0246 error.
+    // VpxVideoEncoder (SIPSorceryMedia.Encoders namespace) — confirmed against
+    // the package source: it was renamed from VideoEncoder to VpxVideoEncoder
+    // upstream (sipsorcery-org/SIPSorceryMedia.Encoders, VpxVideoEncoder.cs).
     private readonly VpxVideoEncoder _codec = new();
 
     public VideoFrame? Decode(byte[] encodedSample)
