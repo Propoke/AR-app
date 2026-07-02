@@ -7,8 +7,14 @@ have not yet run on hardware.
 ## Prerequisites
 - **Backend host** reachable from both the Windows PC and the phone (a LAN IP or a
   deployed domain). coturn needs a public/routable IP for NAT traversal.
-- **Windows 10/11 PC** with the .NET 8 SDK and Windows App SDK (Visual Studio 2022
-  with the WinUI workload is easiest).
+- **Windows 10/11 PC** with the **.NET 8 SDK** (not just the runtime — check with
+  `dotnet --list-sdks`; installing Visual Studio's *runtime* components alone
+  won't give you `dotnet build`) and the Windows App SDK (Visual Studio 2022 with
+  the WinUI workload is easiest). `windows-agent/global.json` pins the build to
+  the .NET 8 SDK band specifically — if you also have .NET 9/10 installed, this
+  keeps `dotnet build` from picking the newer one, which `Microsoft.WindowsAppSDK`
+  1.6.x doesn't recognize as compatible and fails with a
+  `Microsoft.Windows.SDK.NET.Ref` version error.
 - **A phone**: Android (ARCore-supported) or iOS (ARKit, needs a Mac + Xcode to build).
 - **Unity** 2022 LTS or newer with AR Foundation, ARCore/ARKit, and the WebRTC
   package (already pinned in `mobile-client/Packages/manifest.json`).
@@ -42,7 +48,10 @@ to prefill the server field.)
 
 > First real build of the WinUI app — expect to resolve a SIPSorcery API detail or
 > two. `AR.Agent.Core` already compiles/tests in CI, so issues will be in the app
-> layer or native media (`WindowsMedia.cs`).
+> layer or native media (`WindowsMedia.cs`). If the build fails on a
+> `Microsoft.Windows.SDK.NET.Ref` version error, you likely have a newer .NET SDK
+> (9/10) installed that's shadowing 8.x — confirm `dotnet --list-sdks` shows an
+> 8.0.4xx+ entry; `global.json` should already pin to it.
 
 ## 3. Mobile client — assemble the scene
 
